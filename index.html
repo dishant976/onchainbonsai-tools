@@ -101,6 +101,9 @@
         <input id="customrpc" placeholder="Custom RPC · https://eth-mainnet.g.alchemy.com/v2/KEY (optional)" style="width:420px; max-width:80vw">
       </div>
       <div class="rowc" style="margin-top:8px">
+        <input id="apibase" placeholder="Community API URL (best fix — server-side wallet lookup, e.g. https://yourapi.up.railway.app)" style="width:420px; max-width:80vw">
+      </div>
+      <div class="rowc" style="margin-top:8px">
         <input id="oskey" type="password" placeholder="OpenSea API key (optional — makes wallet loading instant)" style="width:420px; max-width:80vw">
         <button class="small" id="saverpc">Save settings</button>
       </div>
@@ -288,9 +291,8 @@
 const CONTRACT = "0xd1bd61c856c1aee57f0439bc018a2b712ce89580";
 const TOTAL_SUPPLY = 3200, BPM = 6900, FULL = 120;
 const DEFAULT_RPCS = [
-  "https://eth.llamarpc.com",
   "https://ethereum-rpc.publicnode.com",
-  "https://rpc.ankr.com/eth",
+  "https://eth.llamarpc.com",
   "https://eth.drpc.org",
   "https://1rpc.io/eth",
   "https://cloudflare-eth.com",
@@ -317,7 +319,7 @@ function decodeAbiString(h) {
 /* ── state & persistence ── */
 const KEY = "grove-v4";
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-let state = Object.assign({ garden: [], journal: {}, collageRings: [], customRpc: "", openseaKey: "" }, load());
+let state = Object.assign({ garden: [], journal: {}, collageRings: [], customRpc: "", openseaKey: "", apiBase: "" }, load());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { toast("Storage full — delete some old rings"); } };
 
 const rpcList = () => state.customRpc ? [state.customRpc, ...DEFAULT_RPCS] : DEFAULT_RPCS;
@@ -524,6 +526,26 @@ $("walletbtn").onclick = loadWallet;
 $("wallet").addEventListener("keydown", (e) => e.key === "Enter" && loadWallet());
 const SPIN = '<span class="spin">⟳</span>';
 
+/* fastest path: same-origin Vercel serverless function (api/wallet-nfts.js) —
+   one call returns every bonsai WITH its on-chain metadata via Alchemy */
+async function viaGroveApi(w) {
+  const res = await fetch(`/api/wallet-nfts?address=${w}`);
+  if (!res.ok) throw new Error("api " + res.status);
+  const j = await res.json();
+  if (!Array.isArray(j.bonsai)) throw new Error(j.error || "bad response");
+  let curBlock = 0;
+  try { curBlock = parseInt(await rpc("eth_blockNumber", []), 16); } catch {}
+  return j.bonsai.map((n) => {
+    const attrs = {};
+    (n.attributes || []).forEach((a) => { attrs[a.trait_type] = a.value; });
+    const age = Math.min(FULL, parseInt(attrs["Age (months)"] ?? attrs["Age"] ?? "0", 10) || 0);
+    const b = { id: +n.id, name: n.name || `Bonsai #${n.id}`, image: n.image, attrs, age,
+      curBlock, mintBlock: curBlock ? curBlock - age * BPM : 0, fetchedAt: Date.now() };
+    dominantGlow(b.image).then((g) => { b.glow = g; save(); renderGarden(); if (b.id === activeId) applyGlow(g); }).catch(() => {});
+    return b;
+  }).filter((b) => b.id && b.image);
+}
+
 async function openseaTokens(w) {
   let ids = [], next = "", pages = 0;
   do {
@@ -609,11 +631,34 @@ async function loadWallet() {
   const btn = $("walletbtn");
   btn.innerHTML = SPIN + " scanning";
   try {
+    // path 0: same-origin serverless function — works automatically once deployed on Vercel with api/wallet-nfts.js
+    try {
+      btn.innerHTML = SPIN + " asking the grove API";
+      const trees = await viaGroveApi(w);
+      if (!trees.length) { btn.textContent = "Load wallet"; return toast("That wallet holds no bonsai — a garden awaits"); }
+      const fresh = trees.filter((b) => !state.garden.some((g2) => g2.id === b.id));
+      if (!fresh.length) { btn.textContent = "Load wallet"; return toast("All of that wallet's bonsai are already in your garden"); }
+      fresh.forEach((b) => state.garden.push(b));
+      save(); renderGarden(); setActive(fresh[fresh.length - 1].id);
+      btn.textContent = "Load wallet";
+      return toast(`Planted ${fresh.length} bonsai — one call, art straight from tokenURI`);
+    } catch (e) { /* not deployed with the api/ function or it errored — fall through */ }
+
     let ids = null;
-    if (state.openseaKey) {
+    if (state.apiBase) {
+      btn.innerHTML = SPIN + " asking your API";
+      try {
+        const res = await fetch(`${state.apiBase}/wallet/${w}`);
+        if (!res.ok) throw new Error("API HTTP " + res.status);
+        const j = await res.json();
+        const raw = Array.isArray(j) ? j : (j.ids || j.tokens || j.tokenIds || []);
+        ids = [...new Set(raw.map((v) => parseInt(v, 10)).filter(Boolean))];
+      } catch (e) { toast(`API lookup failed (${e.message}) — trying OpenSea/chain`); ids = null; }
+    }
+    if (ids === null && state.openseaKey) {
       btn.innerHTML = SPIN + " asking OpenSea";
       try { ids = await openseaTokens(w); }
-      catch (e) { toast(`OpenSea lookup failed (${e.message}) — falling back to chain scan`); }
+      catch (e) { toast(`OpenSea lookup failed (${e.message}) — falling back to chain scan`); ids = null; }
     }
     if (ids === null) ids = await chainTokens(w, btn);
     if (!ids.length) { btn.textContent = "Load wallet"; return toast("That wallet holds no bonsai — a garden awaits"); }
@@ -633,11 +678,13 @@ async function loadWallet() {
 $("saverpc").onclick = () => {
   state.customRpc = $("customrpc").value.trim();
   state.openseaKey = $("oskey").value.trim();
+  state.apiBase = $("apibase").value.trim().replace(/\/+$/, "");
   save();
-  toast("Settings saved" + (state.openseaKey ? " · wallet loading via OpenSea" : "") + (state.customRpc ? " · custom RPC active" : ""));
+  toast("Settings saved" + (state.apiBase ? " · wallet loading via your API" : state.openseaKey ? " · wallet loading via OpenSea" : "") + (state.customRpc ? " · custom RPC active" : ""));
 };
 $("customrpc").value = state.customRpc || "";
 $("oskey").value = state.openseaKey || "";
+$("apibase").value = state.apiBase || "";
 
 /* ── growth lab ── */
 let tlMonth = null, playing = false, playTimer = null;
@@ -884,9 +931,13 @@ function dl(href, name) { const a = document.createElement("a"); a.href = href; 
 
 /* ═══ STUDIO · COLLAGE ═══ */
 const LAYOUTS = [
+  { key:"auto", name:"Auto · fit all", auto:true },
   { key:"3x3", name:"3 × 3", cols:3, rows:3 },
   { key:"4x4", name:"4 × 4", cols:4, rows:4 },
-  { key:"2x3", name:"2 × 3", cols:3, rows:2 },
+  { key:"5x5", name:"5 × 5", cols:5, rows:5 },
+  { key:"6x6", name:"6 × 6", cols:6, rows:6 },
+  { key:"7x7", name:"7 × 7", cols:7, rows:7 },
+  { key:"8x8", name:"8 × 8", cols:8, rows:8 },
   { key:"striph", name:"Strip ―", cols:5, rows:1 },
   { key:"stripv", name:"Strip |", cols:1, rows:5 },
   { key:"hero", name:"Hero + grid", hero:true },
@@ -944,12 +995,14 @@ async function drawCollage(scale = 1, monthOverride = undefined) {
     const rh = (big - gap - 3 * gap) / 4;
     for (let i = 0; i < 4; i++) cells.push([rx, gap + i * (rh + gap), rw, rh]);
   } else {
-    const { cols, rows } = layout;
+    let cols = layout.cols, rows = layout.rows;
+    if (layout.auto) { const n = P.length; cols = Math.ceil(Math.sqrt(n)); rows = Math.ceil(n / cols); }
     const cw = (S - gap * (cols + 1)) / cols;
     const ch = (S - capH - gap * (rows + 1)) / rows;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push([gap + c * (cw + gap), gap + r * (ch + gap), cw, ch]);
   }
   for (let i = 0; i < cells.length; i++) {
+    if (layout.auto && i >= P.length) break; // auto mode: exactly one cell per tree, no repeats
     const b = P[i % P.length];
     let src = b.image;
     if (m !== null && m !== undefined) src = (m === b.age ? b.image : (frames[b.id] || {})[m]) || b.image;
@@ -1059,10 +1112,13 @@ $("crecvid").onclick = async () => {
 };
 
 $("cexport").onclick = async () => {
-  const cv = await drawCollage(2);
+  const n = pool().length;
+  const cols = layout.auto ? Math.ceil(Math.sqrt(Math.max(1, n))) : (layout.cols || 3);
+  const scale = cols >= 7 ? 4 : cols >= 5 ? 3 : 2; // 2048 / 3072 / 4096 px
+  const cv = await drawCollage(scale);
   cv.toBlob((bl) => dl(URL.createObjectURL(bl), "bonsai-collage.png"));
   drawCollage();
-  toast("Collage exported — 2048px");
+  toast(`Collage exported — ${1024 * scale}px`);
 };
 
 /* collage rings */
