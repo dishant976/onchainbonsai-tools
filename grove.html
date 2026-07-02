@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Grove · On-Chain Bonsai community tools</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+  :root{
+    --ink:#101410; --panel:#171d17; --panel2:#121812; --line:#2a352c;
+    --leaf:#8fd39a; --leafdim:#3f7a4c; --sand:#ddd5c2; --mute:#7f8b80; --amber:#dcb45e;
+    --glow:143,211,154; /* rgb triplet, set per-bonsai from its foliage */
+  }
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--ink); color:var(--sand); font-family:'VT323',ui-monospace,monospace; font-size:18px; min-height:100vh;
+       background-image:radial-gradient(1100px 500px at 50% -80px, rgba(var(--glow),.10), transparent 70%);
+       transition:background-image .8s}
+  button{font-family:'VT323',monospace; font-size:17px; letter-spacing:.5px; cursor:pointer; border-radius:6px; padding:8px 14px; border:1px solid var(--line); background:transparent; color:var(--sand)}
+  button.primary{background:rgb(var(--glow)); border-color:rgb(var(--glow)); color:var(--ink)}
+  button.small{padding:4px 10px; font-size:14px}
+  button:disabled{opacity:.45; cursor:default}
+  input,select{font-family:'VT323',monospace; font-size:17px; background:var(--panel2); border:1px solid var(--line); color:var(--sand); border-radius:6px; padding:8px 12px}
+  input:focus,select:focus,button:focus-visible{outline:2px solid rgb(var(--glow)); outline-offset:1px}
+  input[type=range]{accent-color:rgb(var(--glow)); padding:0}
+  input[type=color]{padding:2px; width:44px; height:36px}
+  ::selection{background:var(--leafdim)}
+  .label{font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:var(--mute); font-family:monospace}
+  header{border-bottom:1px solid var(--line); padding:14px 22px; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  #logo{font-size:26px; line-height:1; color:rgb(var(--glow)); text-shadow:0 0 14px rgba(var(--glow),.9), 0 0 34px rgba(var(--glow),.45)}
+  nav{margin-left:auto; display:flex; gap:6px; flex-wrap:wrap}
+  nav button{color:var(--mute)}
+  nav button.active{border-color:rgb(var(--glow)); color:rgb(var(--glow)); background:rgba(var(--glow),.08)}
+  main{max-width:1120px; margin:0 auto; padding:20px}
+  .grid2{display:grid; grid-template-columns:minmax(300px,480px) 1fr; gap:20px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; box-shadow:0 0 46px -22px rgba(var(--glow),.55)}
+  .card2{background:var(--panel2); border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:0 0 60px -18px rgba(var(--glow),.6)}
+  .thumbwrap{cursor:pointer; text-align:center; position:relative; padding:4px; border-radius:8px; border:1px solid transparent}
+  .thumbwrap.active{border-color:rgb(var(--glow))}
+  .thumbwrap.sel{border-color:var(--amber)}
+  .thumbwrap img,.ringimg{width:64px; height:64px; border-radius:6px; border:1px solid var(--line); display:block; image-rendering:pixelated; background:#000}
+  .rm{position:absolute; top:-4px; right:-4px; width:18px; height:18px; border-radius:9px; background:var(--panel); color:var(--mute); font-size:12px; line-height:14px; padding:0}
+  #stagewrap{position:relative}
+  #halo{position:absolute; inset:0; pointer-events:none; background:radial-gradient(60% 55% at 50% 46%, rgba(var(--glow),.30), transparent 70%); mix-blend-mode:screen; animation:breathe 5s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.55}50%{opacity:1}}
+  #stage-img{width:100%; display:block; image-rendering:pixelated; background:#0a0d0a; min-height:340px; object-fit:contain; filter:drop-shadow(0 0 16px rgba(var(--glow),.55))}
+  .traitgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px}
+  .trait{background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 10px}
+  .ring{display:flex; gap:12px; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:10px}
+  #rings,#crings{margin-top:16px; display:flex; flex-direction:column; gap:10px; max-height:380px; overflow-y:auto}
+  #toast{position:fixed; top:14px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid rgb(var(--glow)); color:rgb(var(--glow)); padding:8px 18px; border-radius:8px; z-index:60; display:none; max-width:92vw}
+  .spin{display:inline-block; animation:sp 1.2s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  footer{margin:36px 0 20px; color:var(--mute); font-size:15px; text-align:center; line-height:1.6}
+  .empty{border:1px dashed var(--line); border-radius:10px; padding:22px; text-align:center; color:var(--mute)}
+  .lay,.mode{border:1px solid var(--line); border-radius:8px; padding:8px 12px; cursor:pointer; color:var(--mute); background:transparent; font-size:17px}
+  .lay.active,.mode.active{border-color:rgb(var(--glow)); color:rgb(var(--glow)); background:rgba(var(--glow),.08)}
+  #collage-canvas,#px-canvas{width:100%; border:1px solid var(--line); border-radius:12px; background:#000; image-rendering:pixelated; box-shadow:0 0 60px -18px rgba(var(--glow),.6)}
+  #px-canvas{touch-action:none; cursor:crosshair}
+  .sw{width:26px; height:26px; border-radius:5px; border:1px solid var(--line); cursor:pointer; padding:0}
+  .sw.active{outline:2px solid rgb(var(--glow))}
+  .tool.active{border-color:rgb(var(--glow)); color:rgb(var(--glow))}
+  .rowc{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex; align-items:center; gap:12px">
+    <div id="logo">盆栽</div>
+    <div>
+      <div style="font-size:24px; line-height:1; color:rgb(var(--glow))">THE GROVE</div>
+      <div class="label">on-chain bonsai · community tools · straight from the contract</div>
+    </div>
+  </div>
+  <nav>
+    <button id="tab-lab" class="active">Growth Lab</button>
+    <button id="tab-studio">Studio</button>
+    <button disabled>Garden Map <span style="color:var(--amber); font-size:12px">soon</span></button>
+  </nav>
+</header>
+
+<div id="toast"></div>
+
+<main>
+  <!-- shared garden strip -->
+  <section style="margin-bottom:18px">
+    <div class="label" style="margin-bottom:8px" id="garden-label">My garden</div>
+    <div id="garden" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap"></div>
+    <div class="rowc" style="margin-top:10px">
+      <input id="tok" placeholder="Token ID · 1–3200" inputmode="numeric" style="width:150px">
+      <button class="primary" id="plant">Plant</button>
+      <input id="wallet" placeholder="0x wallet — load every bonsai it holds" style="width:320px; max-width:60vw">
+      <button id="walletbtn">Load wallet</button>
+      <span id="rpc-status" style="color:var(--mute); font-size:15px"></span>
+    </div>
+    <details style="margin-top:8px; color:var(--mute); font-size:15px">
+      <summary style="cursor:pointer">Settings · RPC & OpenSea key</summary>
+      <div class="rowc" style="margin-top:8px">
+        <input id="customrpc" placeholder="Custom RPC · https://eth-mainnet.g.alchemy.com/v2/KEY (optional)" style="width:420px; max-width:80vw">
+      </div>
+      <div class="rowc" style="margin-top:8px">
+        <input id="oskey" type="password" placeholder="OpenSea API key (optional — makes wallet loading instant)" style="width:420px; max-width:80vw">
+        <button class="small" id="saverpc">Save settings</button>
+      </div>
+      <div style="margin-top:6px; max-width:760px">
+        The OpenSea key is only used to list which tokens a wallet holds — the art itself still comes from the contract.
+        A custom RPC unlocks reliable future-month previews and faster history. Keys are stored only in this browser;
+        if you deploy this page publicly, don't ship your personal key in it — proxy wallet lookups through your API instead.
+      </div>
+    </details>
+    <p id="empty-msg" class="empty" style="margin-top:12px; display:none">
+      Your garden is empty. Enter a token ID or a wallet address — the real artwork is read live from the Ethereum contract and everything stays saved in this browser.
+    </p>
+  </section>
+
+  <!-- ═══ GROWTH LAB ═══ -->
+  <div id="view-lab">
+    <div class="grid2" id="workspace" style="display:none">
+      <section>
+        <div class="card2">
+          <div id="stagewrap">
+            <img id="stage-img" alt="Your on-chain bonsai, rendered by the contract">
+            <div id="halo"></div>
+          </div>
+          <div style="padding:14px; border-top:1px solid var(--line)">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:6px">
+              <div id="stage-name" style="font-size:22px; color:rgb(var(--glow))"></div>
+              <div id="stage-age" style="color:var(--amber)"></div>
+            </div>
+            <div style="margin-top:12px">
+              <div style="display:flex; justify-content:space-between; align-items:baseline">
+                <span class="label">Growth timeline · month 0 → 120 · every frame from the contract</span>
+                <span id="tl-month" style="color:rgb(var(--glow))"></span>
+              </div>
+              <input type="range" id="tl" min="0" max="120" value="0" style="width:100%; margin:8px 0 2px" aria-label="Month">
+              <div id="tl-note" style="color:var(--mute); font-size:15px; min-height:22px"></div>
+              <div class="rowc" style="margin-top:10px">
+                <button id="play" class="primary">▸ Grow full life</button>
+                <select id="pstart" title="Start point"><option value="0">from month 0</option><option value="now">from now</option></select>
+                <select id="pstep" title="Interval"><option value="1">every month</option><option value="3">every 3 mo</option><option value="6">every 6 mo</option><option value="12">every 12 mo</option></select>
+                <button id="recvid">⏺ Record video</button>
+              </div>
+              <div class="rowc" style="margin-top:8px">
+                <button id="today" class="small">Today</button>
+                <button id="refresh" class="small">Refresh ⟳</button>
+                <button id="png" class="small">Save PNG</button>
+                <button id="svgbtn" class="small">Raw SVG</button>
+              </div>
+              <div id="tl-progress" style="color:var(--mute); font-size:14px; margin-top:6px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="label">On-chain traits</div>
+          <div class="traitgrid" id="traits"></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div style="font-size:22px">Growth journal</div>
+          <p style="color:var(--mute); font-size:16px; margin:4px 0 12px">
+            Record your bonsai exactly as the contract renders it today. Each ring stores the real artwork.
+          </p>
+          <div style="display:flex; gap:8px">
+            <input id="note" placeholder="Note (optional) — e.g. first buds opened" style="flex:1">
+            <button class="primary" id="record">Record ring</button>
+          </div>
+          <div id="rings"></div>
+          <div id="growth-summary" style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px; display:none">
+            <div class="label" style="margin-bottom:6px">Growth so far</div>
+            <div id="growth-text"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ═══ STUDIO ═══ -->
+  <div id="view-studio" style="display:none">
+    <div class="rowc" style="margin-bottom:16px">
+      <button class="mode active" id="m-collage">Collage</button>
+      <button class="mode" id="m-pixels">Pixel editor</button>
+      <span style="color:var(--mute); font-size:15px">· tap garden trees above to add them to the studio pool</span>
+    </div>
+
+    <!-- collage mode -->
+    <div id="studio-collage" class="grid2">
+      <section class="card">
+        <div style="font-size:22px">Collage</div>
+        <div class="label" style="margin:12px 0 6px">Layout</div>
+        <div id="layouts" class="rowc"></div>
+        <div class="label" style="margin:14px 0 6px">Selected · <span id="sel-count">0</span></div>
+        <div class="rowc" style="margin-top:8px">
+          <label class="rowc" style="color:var(--mute)">Background <input type="color" id="cbg" value="#101410"></label>
+          <label class="rowc" style="color:var(--mute)">Gap <input type="range" id="cgap" min="0" max="40" value="12" style="width:100px"></label>
+          <label class="rowc" style="color:var(--mute)"><input type="checkbox" id="ccap" checked> caption</label>
+          <input id="ctitle" placeholder="Title (optional)" style="width:180px">
+        </div>
+        <div class="rowc" style="margin-top:12px">
+          <button id="cselall" class="small">Select all</button>
+          <button id="cclear" class="small">Clear</button>
+          <button id="cexport" class="primary">Export PNG</button>
+        </div>
+
+        <div style="border-top:1px solid var(--line); margin-top:16px; padding-top:12px">
+          <div class="label">Grove timeline · the whole collage grows together</div>
+          <input type="range" id="ctl" min="0" max="120" value="0" style="width:100%; margin:8px 0 2px" aria-label="Collage month">
+          <div id="ctl-note" style="color:var(--mute); font-size:15px; min-height:20px"></div>
+          <div class="rowc" style="margin-top:8px">
+            <button id="cplay" class="primary">▸ Grow full life</button>
+            <select id="cstart"><option value="0">from month 0</option><option value="now">from now</option></select>
+            <select id="cstep"><option value="1">every month</option><option value="3">every 3 mo</option><option value="6">every 6 mo</option><option value="12">every 12 mo</option></select>
+            <button id="crecvid">⏺ Record video</button>
+            <button id="ctoday" class="small">Today</button>
+          </div>
+          <div id="ctl-progress" style="color:var(--mute); font-size:14px; margin-top:6px"></div>
+        </div>
+
+        <div style="border-top:1px solid var(--line); margin-top:16px; padding-top:12px">
+          <div style="font-size:20px">Collage journal</div>
+          <div class="rowc" style="margin-top:8px">
+            <input id="cnote" placeholder="Note — e.g. the grove at midsummer" style="flex:1; min-width:160px">
+            <button class="primary" id="crecord">Record collage ring</button>
+          </div>
+          <div id="crings"></div>
+        </div>
+      </section>
+      <section>
+        <canvas id="collage-canvas" width="1024" height="1024"></canvas>
+      </section>
+    </div>
+
+    <!-- pixel editor mode -->
+    <div id="studio-pixels" class="grid2" style="display:none">
+      <section class="card">
+        <div style="font-size:22px">Pixel editor</div>
+        <p style="color:var(--mute); font-size:16px; margin:4px 0 12px">
+          Load your bonsai onto the easel and remix it pixel by pixel. The chain doesn't mind.
+        </p>
+        <div class="rowc">
+          <button class="primary" id="px-load">Load active bonsai</button>
+          <select id="px-res"><option>32</option><option selected>48</option><option>64</option><option>96</option></select>
+          <span class="label">grid</span>
+          <label class="rowc" style="color:var(--mute)"><input type="checkbox" id="px-grid" checked> gridlines</label>
+        </div>
+        <div class="label" style="margin:12px 0 6px">Tools</div>
+        <div class="rowc">
+          <button class="tool small active" data-t="paint">✏ Paint</button>
+          <button class="tool small" data-t="erase">◻ Erase</button>
+          <button class="tool small" data-t="pick">💧 Pick</button>
+          <button class="tool small" data-t="fill">▨ Fill</button>
+          <button class="small" id="px-undo">↩ Undo</button>
+          <button class="small" id="px-clear">Clear</button>
+        </div>
+        <div class="label" style="margin:12px 0 6px">Palette · sampled from your tree</div>
+        <div id="px-pal" class="rowc"></div>
+        <div class="rowc" style="margin-top:8px">
+          <input type="color" id="px-color" value="#8fd39a">
+          <span style="color:var(--mute); font-size:15px">custom color</span>
+        </div>
+        <div class="rowc" style="margin-top:14px">
+          <button id="px-export" class="primary">Export PNG (1536px)</button>
+        </div>
+      </section>
+      <section>
+        <canvas id="px-canvas" width="768" height="768"></canvas>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    A community tool for On-Chain Bonsai · 3,200 trees, fully on-chain · <span id="contract-short"></span> ·
+    art and metadata come from <code>tokenURI()</code> — no servers, no OpenSea<br>
+    A life is 120 months. You will die. Your bonsai will keep growing old.
+  </footer>
+</main>
+
+<script>
+/* ═════════════════════════════════════════════
+   THE GROVE v4 — everything on screen comes from the contract.
+   today: tokenURI @ latest · past month: tokenURI @ (mint + m·6900)
+   future month: eth_call with blockOverrides{number} where the RPC allows
+   Life: 120 months. Video: MediaRecorder (mp4 where the browser can, else webm).
+   ═════════════════════════════════════════════ */
+const CONTRACT = "0xd1bd61c856c1aee57f0439bc018a2b712ce89580";
+const TOTAL_SUPPLY = 3200, BPM = 6900, FULL = 120;
+const DEFAULT_RPCS = [
+  "https://eth.llamarpc.com",
+  "https://ethereum-rpc.publicnode.com",
+  "https://rpc.ankr.com/eth",
+  "https://eth.drpc.org",
+  "https://1rpc.io/eth",
+  "https://cloudflare-eth.com",
+];
+document.getElementById("contract-short").textContent = CONTRACT.slice(0,10) + "…";
+
+const SEL_URI = "0xc87b56dd";       // tokenURI(uint256)
+const SEL_BAL = "0x70a08231";       // balanceOf(address)
+const SEL_TOKBYIDX = "0x2f745c59";  // tokenOfOwnerByIndex(address,uint256)
+const SEL_OWNER = "0x6352211e";     // ownerOf(uint256)
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const pad64 = (n) => BigInt(n).toString(16).padStart(64, "0");
+const padAddr = (a) => a.toLowerCase().replace("0x", "").padStart(64, "0");
+const hex = (n) => "0x" + BigInt(n).toString(16);
+
+function decodeAbiString(h) {
+  h = h.startsWith("0x") ? h.slice(2) : h;
+  const len = parseInt(h.slice(64, 128), 16);
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = parseInt(h.substr(128 + i * 2, 2), 16);
+  return new TextDecoder().decode(bytes);
+}
+
+/* ── state & persistence ── */
+const KEY = "grove-v4";
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+let state = Object.assign({ garden: [], journal: {}, collageRings: [], customRpc: "", openseaKey: "" }, load());
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { toast("Storage full — delete some old rings"); } };
+
+const rpcList = () => state.customRpc ? [state.customRpc, ...DEFAULT_RPCS] : DEFAULT_RPCS;
+
+let rpcIdx = 0;
+async function rpc(method, params) {
+  const list = rpcList();
+  let lastErr;
+  for (let i = 0; i < list.length; i++) {
+    const url = list[(rpcIdx + i) % list.length];
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+      const j = await res.json();
+      if (j.result !== undefined && j.result !== null && j.result !== "0x") {
+        rpcIdx = (rpcIdx + i) % list.length;
+        try { document.getElementById("rpc-status").textContent = "· live via " + new URL(url).hostname; } catch {}
+        return j.result;
+      }
+      lastErr = j.error?.message || "empty";
+    } catch (e) { lastErr = e.message; }
+  }
+  throw new Error(lastErr || "all RPCs failed");
+}
+
+/* batched JSON-RPC: many eth_calls in ONE http round trip — big speed win.
+   Lenient: returns an array with holes for failed items; throws only if nothing came back. */
+async function rpcBatch(reqs) {
+  const list = rpcList();
+  let lastErr;
+  for (let i = 0; i < list.length; i++) {
+    const url = list[(rpcIdx + i) % list.length];
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqs.map((r, k) => ({ jsonrpc: "2.0", id: k, method: r.method, params: r.params }))) });
+      const j = await res.json();
+      if (Array.isArray(j)) {
+        const out = new Array(reqs.length);
+        let any = false;
+        j.forEach((r) => { if (r && r.result && r.result !== "0x") { out[r.id] = r.result; any = true; } });
+        if (any) { rpcIdx = (rpcIdx + i) % list.length; return out; }
+        lastErr = "batch empty";
+      } else lastErr = j?.error?.message || "no batch support";
+    } catch (e) { lastErr = e.message; }
+  }
+  throw new Error(lastErr || "batch failed");
+}
+
+function parseURI(raw) {
+  let json;
+  if (raw.startsWith("data:application/json;base64,")) json = JSON.parse(atob(raw.split(",")[1]));
+  else if (raw.startsWith("data:application/json")) json = JSON.parse(decodeURIComponent(raw.slice(raw.indexOf(",") + 1)));
+  else json = JSON.parse(raw);
+  const attrs = {};
+  (json.attributes || []).forEach((a) => { attrs[a.trait_type] = a.value; });
+  return { name: json.name, image: json.image, attrs };
+}
+
+async function fetchBonsai(id) {
+  const [uriHex, blkHex] = await Promise.all([
+    rpc("eth_call", [{ to: CONTRACT, data: SEL_URI + pad64(id) }, "latest"]),
+    rpc("eth_blockNumber", []),
+  ]);
+  const p = parseURI(decodeAbiString(uriHex));
+  const curBlock = parseInt(blkHex, 16);
+  const age = Math.min(FULL, parseInt(p.attrs["Age (months)"] ?? p.attrs["Age"] ?? "0", 10) || 0);
+  const b = { id, name: p.name || `Bonsai #${id}`, image: p.image, attrs: p.attrs, age, curBlock, mintBlock: curBlock - age * BPM, fetchedAt: Date.now() };
+  b.glow = await dominantGlow(b.image).catch(() => null);
+  return b;
+}
+
+let futureOK = null;
+async function fetchAtMonth(b, m) {
+  m = Math.max(0, Math.min(FULL, m));
+  if (m === b.age) return b.image;
+  const target = b.mintBlock + m * BPM + 60;
+  if (m < b.age) {
+    const r = await rpc("eth_call", [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, hex(target)]);
+    return parseURI(decodeAbiString(r)).image;
+  }
+  const list = rpcList();
+  let lastErr;
+  for (let i = 0; i < list.length; i++) {
+    try {
+      const res = await fetch(list[(rpcIdx + i) % list.length], { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call",
+          params: [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, "latest", {}, { number: hex(target) }] }) });
+      const j = await res.json();
+      if (j.result && j.result !== "0x") { futureOK = true; return parseURI(decodeAbiString(j.result)).image; }
+      lastErr = j.error?.message;
+    } catch (e) { lastErr = e.message; }
+  }
+  futureOK = futureOK === true ? true : false;
+  throw new Error("future:" + lastErr);
+}
+
+const frames = {}; // frames[id][m] = data URI
+async function getFrame(b, m) {
+  frames[b.id] = frames[b.id] || {};
+  if (m === b.age) return b.image;
+  if (frames[b.id][m]) return frames[b.id][m];
+  const img = await fetchAtMonth(b, m);
+  frames[b.id][m] = img;
+  return img;
+}
+
+/* ── glow: dominant foliage color ── */
+function dominantGlow(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = 48; c.height = 48;
+      const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+      x.drawImage(img, 0, 0, 48, 48);
+      const d = x.getImageData(0, 0, 48, 48).data;
+      const tally = {};
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i+1], bl = d[i+2], a = d[i+3];
+        if (a < 200) continue;
+        const mx = Math.max(r, g, bl), mn = Math.min(r, g, bl);
+        if (mx < 70 || mx - mn < 42) continue; // skip dark & gray (bg, trunk, pot)
+        const k = `${r >> 4},${g >> 4},${bl >> 4}`;
+        tally[k] = (tally[k] || 0) + 1;
+      }
+      let best = null, n = 0;
+      for (const k in tally) if (tally[k] > n) { n = tally[k]; best = k; }
+      if (!best) return res(null);
+      const [r, g, bl] = best.split(",").map((v) => (+v << 4) + 8);
+      res(`${r},${g},${bl}`);
+    };
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+function applyGlow(triplet) {
+  document.documentElement.style.setProperty("--glow", triplet || "143,211,154");
+}
+
+/* ── UI helpers ── */
+const $ = (id) => document.getElementById(id);
+function toast(m) { const t = $("toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3000); }
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+let activeId = state.garden[0]?.id ?? null;
+const act = () => state.garden.find((x) => x.id === activeId);
+
+/* ── garden strip ── */
+let collageSel = [];
+let tab = "lab";
+function renderGarden() {
+  const g = $("garden");
+  g.innerHTML = "";
+  $("garden-label").textContent = "My garden" + (state.garden.length ? ` · ${state.garden.length} tree${state.garden.length > 1 ? "s" : ""}` : "");
+  $("empty-msg").style.display = state.garden.length ? "none" : "block";
+  state.garden.forEach((b) => {
+    const d = document.createElement("div");
+    const selN = collageSel.indexOf(b.id);
+    d.className = "thumbwrap" + (tab === "lab" && b.id === activeId ? " active" : "") + (tab === "studio" && selN >= 0 ? " sel" : "");
+    d.innerHTML = `<img src="${b.image || ""}" alt="Bonsai ${b.id}" style="box-shadow:0 0 14px -2px rgba(${b.glow || "143,211,154"},.7)">
+      <div style="font-size:14px; color:${(tab === "lab" ? b.id === activeId : selN >= 0) ? "rgb(var(--glow))" : "var(--mute)"}">#${b.id}${tab === "studio" && selN >= 0 ? " ·" + (selN + 1) : ""}</div>
+      <button class="rm" aria-label="Remove bonsai ${b.id}">×</button>`;
+    d.onclick = () => {
+      if (tab === "studio") {
+        const i = collageSel.indexOf(b.id);
+        i >= 0 ? collageSel.splice(i, 1) : collageSel.push(b.id);
+        renderGarden(); drawCollage();
+      } else setActive(b.id);
+    };
+    d.querySelector(".rm").onclick = (e) => {
+      e.stopPropagation();
+      state.garden = state.garden.filter((x) => x.id !== b.id);
+      delete state.journal[b.id]; delete frames[b.id];
+      collageSel = collageSel.filter((x) => x !== b.id);
+      if (activeId === b.id) activeId = state.garden[0]?.id ?? null;
+      save(); renderGarden(); renderActive(); drawCollage();
+    };
+    g.appendChild(d);
+  });
+}
+function setActive(id) {
+  activeId = id; stopPlay(); tlMonth = null;
+  const b = act();
+  applyGlow(b?.glow);
+  renderGarden(); renderActive();
+}
+
+/* ── plant by token / wallet ── */
+$("plant").onclick = plant;
+$("tok").addEventListener("keydown", (e) => e.key === "Enter" && plant());
+async function plant() {
+  const id = parseInt($("tok").value, 10);
+  if (!id || id < 1 || id > TOTAL_SUPPLY) return toast(`Enter a token ID between 1 and ${TOTAL_SUPPLY}`);
+  if (state.garden.some((b) => b.id === id)) { setActive(id); $("tok").value = ""; return; }
+  $("plant").innerHTML = `<span class="spin">⟳</span>`;
+  try {
+    const b = await fetchBonsai(id);
+    state.garden.push(b); save();
+    setActive(id); $("tok").value = "";
+    toast(`${b.name} planted — read live from the contract`);
+  } catch { toast("Couldn't reach Ethereum right now — try again"); }
+  $("plant").textContent = "Plant";
+}
+
+$("walletbtn").onclick = loadWallet;
+$("wallet").addEventListener("keydown", (e) => e.key === "Enter" && loadWallet());
+const SPIN = '<span class="spin">⟳</span>';
+
+async function openseaTokens(w) {
+  let ids = [], next = "", pages = 0;
+  do {
+    const res = await fetch(`https://api.opensea.io/api/v2/chain/ethereum/account/${w}/nfts?collection=onchainbonsai&limit=200${next ? "&next=" + encodeURIComponent(next) : ""}`,
+      { headers: { "x-api-key": state.openseaKey, accept: "application/json" } });
+    if (!res.ok) throw new Error("OpenSea HTTP " + res.status);
+    const j = await res.json();
+    (j.nfts || []).forEach((n) => { const id = parseInt(n.identifier, 10); if (id) ids.push(id); });
+    next = j.next || "";
+  } while (next && ++pages < 20);
+  return [...new Set(ids)];
+}
+
+async function chainTokens(w, btn) {
+  // path 1: ERC721Enumerable
+  try {
+    const bal = parseInt(await rpc("eth_call", [{ to: CONTRACT, data: SEL_BAL + padAddr(w) }, "latest"]), 16);
+    if (!bal) return [];
+    if (bal <= 80) {
+      const reqs = Array.from({ length: bal }, (_, i) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_TOKBYIDX + padAddr(w) + pad64(i) }, "latest"] }));
+      try {
+        const rs = await rpcBatch(reqs);
+        if (rs.filter(Boolean).length === bal) return rs.map((r) => parseInt(r, 16));
+      } catch {}
+      const ids = [];
+      for (let i = 0; i < bal; i++) ids.push(parseInt(await rpc("eth_call", [{ to: CONTRACT, data: SEL_TOKBYIDX + padAddr(w) + pad64(i) }, "latest"]), 16));
+      return ids;
+    }
+  } catch {}
+  // path 2: chunked Transfer-log scan (public RPCs reject huge ranges — so we go 45k blocks at a time)
+  const cur = parseInt(await rpc("eth_blockNumber", []), 16);
+  const start = cur - 400000, STEPB = 45000;
+  const cand = new Set();
+  for (let fb = start; fb <= cur; fb += STEPB) {
+    btn.innerHTML = SPIN + ` scanning chain ${Math.min(99, Math.round((fb - start) / (cur - start) * 100))}%`;
+    try {
+      const logs = await rpc("eth_getLogs", [{ address: CONTRACT, fromBlock: hex(fb), toBlock: hex(Math.min(cur, fb + STEPB - 1)), topics: [TRANSFER_TOPIC, null, "0x" + padAddr(w)] }]);
+      if (Array.isArray(logs)) logs.forEach((l) => cand.add(parseInt(l.topics[3], 16)));
+    } catch {}
+  }
+  // verify they still own each candidate (batched)
+  const arr = [...cand], ids = [];
+  for (let i = 0; i < arr.length; i += 8) {
+    const ch = arr.slice(i, i + 8);
+    try {
+      const rs = await rpcBatch(ch.map((id) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_OWNER + pad64(id) }, "latest"] })));
+      ch.forEach((id, k) => { if (rs[k] && "0x" + rs[k].slice(-40).toLowerCase() === w.toLowerCase()) ids.push(id); });
+    } catch {
+      for (const id of ch) { try { const o = await rpc("eth_call", [{ to: CONTRACT, data: SEL_OWNER + pad64(id) }, "latest"]); if ("0x" + o.slice(-40).toLowerCase() === w.toLowerCase()) ids.push(id); } catch {} }
+    }
+  }
+  return ids;
+}
+
+/* bulk art fetch — batched tokenURIs, glow computed in background */
+async function fetchBonsaiMany(ids, prog) {
+  const curBlock = parseInt(await rpc("eth_blockNumber", []), 16);
+  const out = [];
+  for (let i = 0; i < ids.length; i += 4) {
+    const chunk = ids.slice(i, i + 4);
+    prog(`fetching art ${Math.min(i + chunk.length, ids.length)}/${ids.length}`);
+    let rs;
+    try { rs = await rpcBatch(chunk.map((id) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_URI + pad64(id) }, "latest"] }))); }
+    catch { rs = []; for (const id of chunk) { try { rs.push(await rpc("eth_call", [{ to: CONTRACT, data: SEL_URI + pad64(id) }, "latest"])); } catch { rs.push(undefined); } } }
+    chunk.forEach((id, k) => {
+      if (!rs[k]) return;
+      try {
+        const p = parseURI(decodeAbiString(rs[k]));
+        const age = Math.min(FULL, parseInt(p.attrs["Age (months)"] ?? p.attrs["Age"] ?? "0", 10) || 0);
+        const b = { id, name: p.name || `Bonsai #${id}`, image: p.image, attrs: p.attrs, age, curBlock, mintBlock: curBlock - age * BPM, fetchedAt: Date.now() };
+        out.push(b);
+        dominantGlow(b.image).then((g) => { b.glow = g; save(); renderGarden(); if (b.id === activeId) applyGlow(g); }).catch(() => {});
+      } catch {}
+    });
+    renderGarden();
+  }
+  return out;
+}
+
+async function loadWallet() {
+  const w = $("wallet").value.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(w)) return toast("Enter a full 0x wallet address (ENS not supported yet)");
+  const btn = $("walletbtn");
+  btn.innerHTML = SPIN + " scanning";
+  try {
+    let ids = null;
+    if (state.openseaKey) {
+      btn.innerHTML = SPIN + " asking OpenSea";
+      try { ids = await openseaTokens(w); }
+      catch (e) { toast(`OpenSea lookup failed (${e.message}) — falling back to chain scan`); }
+    }
+    if (ids === null) ids = await chainTokens(w, btn);
+    if (!ids.length) { btn.textContent = "Load wallet"; return toast("That wallet holds no bonsai — a garden awaits"); }
+    const fresh = ids.filter((id) => !state.garden.some((b) => b.id === id));
+    if (!fresh.length) { btn.textContent = "Load wallet"; return toast("All of that wallet's bonsai are already in your garden"); }
+    const trees = await fetchBonsaiMany(fresh, (m) => btn.innerHTML = SPIN + " " + m);
+    trees.forEach((b) => state.garden.push(b));
+    save(); renderGarden();
+    if (trees.length) { setActive(trees[trees.length - 1].id); toast(`Planted ${trees.length} bonsai from that wallet${state.openseaKey ? "" : " — add an OpenSea key in Settings to make this instant"}`); }
+    else toast("Found the tokens but the art fetch failed — try again");
+  } catch (e) {
+    toast(`Wallet scan failed: ${e.message || "RPC error"} — an OpenSea key in Settings avoids chain scanning entirely`);
+  }
+  btn.textContent = "Load wallet";
+}
+
+$("saverpc").onclick = () => {
+  state.customRpc = $("customrpc").value.trim();
+  state.openseaKey = $("oskey").value.trim();
+  save();
+  toast("Settings saved" + (state.openseaKey ? " · wallet loading via OpenSea" : "") + (state.customRpc ? " · custom RPC active" : ""));
+};
+$("customrpc").value = state.customRpc || "";
+$("oskey").value = state.openseaKey || "";
+
+/* ── growth lab ── */
+let tlMonth = null, playing = false, playTimer = null;
+function renderActive() {
+  const b = act();
+  $("workspace").style.display = b ? "grid" : "none";
+  if (!b) return;
+  $("stage-img").src = b.image;
+  $("stage-name").textContent = b.name;
+  $("stage-age").textContent = `${b.attrs["Stage"] ? b.attrs["Stage"] + " · " : ""}month ${b.age} of ${FULL}`;
+  $("tl").value = b.age;
+  $("tl-month").textContent = `month ${b.age} · today`;
+  $("tl-note").textContent = `0 → ${b.age} are real historical renders; beyond today we ask the RPC to simulate the future block, all the way to month ${FULL}.`;
+  $("tl-progress").textContent = "";
+  const tg = $("traits"); tg.innerHTML = "";
+  Object.entries(b.attrs).forEach(([k, v]) => {
+    const el = document.createElement("div");
+    el.className = "trait";
+    el.innerHTML = `<div class="label" style="font-size:10px">${esc(k)}</div><div style="font-size:17px">${esc(v)}</div>`;
+    tg.appendChild(el);
+  });
+  renderRings();
+}
+
+async function showMonth(m) {
+  const b = act(); if (!b) return false;
+  m = Math.max(0, Math.min(FULL, m));
+  tlMonth = m;
+  $("tl").value = m;
+  $("tl-month").textContent = `month ${m}${m === b.age ? " · today" : m < b.age ? " · chain history" : m >= FULL ? " · the last pixel" : " · future preview"}`;
+  if (m === b.age) { $("stage-img").src = b.image; $("tl-note").textContent = "As it stands today."; return true; }
+  frames[b.id] = frames[b.id] || {};
+  if (frames[b.id][m]) { $("stage-img").src = frames[b.id][m]; noteFor(m, b); return true; }
+  $("tl-note").innerHTML = `<span class="spin">⟳</span> asking the contract for month ${m}…`;
+  try {
+    const img = await getFrame(b, m);
+    if (tlMonth === m) { $("stage-img").src = img; noteFor(m, b); }
+    return true;
+  } catch {
+    if (m > b.age) { $("stage-img").src = b.image; $("tl-note").textContent = `These RPCs won't simulate future blocks — add a free Alchemy/Infura endpoint in RPC settings to see months ${b.age + 1}–${FULL}.`; }
+    else $("tl-note").textContent = "No archive for that block on this endpoint — try again, another will answer.";
+    return false;
+  }
+}
+function noteFor(m, b) {
+  $("tl-note").textContent =
+    m < b.age ? `Real render from block ${(b.mintBlock + m * BPM).toLocaleString()} — this is what ${b.name} actually looked like.` :
+    m >= FULL ? "Month 120. The last new pixel of a life. From here, it only grows old with you." :
+    "Simulated future block — the contract's own renderer, asked politely about tomorrow.";
+}
+
+/* month sequence per start/step controls — always ends on 120 */
+function seq(startSel, stepSel, age) {
+  const step = +stepSel.value;
+  const start = startSel.value === "now" ? age : 0;
+  const list = [];
+  for (let m = start; m < FULL; m += step) list.push(m);
+  list.push(FULL);
+  return list;
+}
+async function prefetch(b, months, progEl, label) {
+  frames[b.id] = frames[b.id] || {};
+  const missing = months.filter((m) => m !== b.age && !frames[b.id][m]);
+  const past = missing.filter((m) => m < b.age), fut = missing.filter((m) => m > b.age);
+  const total = missing.length;
+  let done = 0;
+  const tick = () => progEl.textContent = `${label === "video" ? "preparing video" : "fetching"} · ${Math.min(done, total)}/${total} frames`;
+  for (let i = 0; i < past.length; i += 6) {
+    if (!playing && label !== "video") return false;
+    const ch = past.slice(i, i + 6);
+    tick();
+    try {
+      const rs = await rpcBatch(ch.map((m) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, hex(b.mintBlock + m * BPM + 60)] })));
+      ch.forEach((m, k) => { if (rs[k]) frames[b.id][m] = parseURI(decodeAbiString(rs[k])).image; });
+    } catch {}
+    for (const m of ch) if (!frames[b.id][m]) { try { await getFrame(b, m); } catch {} }
+    done += ch.length;
+  }
+  // future: try batched blockOverrides first, then one-by-one
+  for (let i = 0; i < fut.length; i += 6) {
+    if (!playing && label !== "video") return false;
+    const ch = fut.slice(i, i + 6);
+    tick();
+    try {
+      const rs = await rpcBatch(ch.map((m) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, "latest", {}, { number: hex(b.mintBlock + m * BPM + 60) }] })));
+      ch.forEach((m, k) => { if (rs[k]) { frames[b.id][m] = parseURI(decodeAbiString(rs[k])).image; futureOK = true; } });
+    } catch {}
+    for (const m of ch) if (!frames[b.id][m]) {
+      try { await getFrame(b, m); }
+      catch { progEl.textContent = `future frames unavailable on these RPCs — playing to month ${b.age}`; return "nofuture"; }
+    }
+    done += ch.length;
+  }
+  progEl.textContent = "";
+  return true;
+}
+
+$("play").onclick = async () => {
+  if (playing) return stopPlay();
+  const b = act(); if (!b) return;
+  playing = true; $("play").textContent = "❚❚ Pause";
+  let months = seq($("pstart"), $("pstep"), b.age);
+  const ok = await prefetch(b, months, $("tl-progress"), "play");
+  if (!playing) return;
+  if (ok === "nofuture") months = months.filter((m) => m <= b.age);
+  let i = 0;
+  playTimer = setInterval(() => {
+    if (!playing || i >= months.length) return stopPlay();
+    showMonth(months[i++]);
+  }, 340);
+};
+function stopPlay() { playing = false; clearInterval(playTimer); $("play").textContent = "▸ Grow full life"; $("tl-progress").textContent = ""; }
+
+let tlDeb;
+$("tl").oninput = (e) => { stopPlay(); clearTimeout(tlDeb); $("tl-month").textContent = "month " + e.target.value; tlDeb = setTimeout(() => showMonth(+e.target.value), 180); };
+$("today").onclick = () => { stopPlay(); const b = act(); if (b) showMonth(b.age); };
+$("refresh").onclick = async () => {
+  const b = act(); if (!b) return;
+  $("refresh").innerHTML = `<span class="spin">⟳</span>`;
+  try { Object.assign(b, await fetchBonsai(b.id)); save(); applyGlow(b.glow); renderGarden(); renderActive(); toast(`Refreshed — month ${b.age}`); }
+  catch { toast("Couldn't reach Ethereum right now"); }
+  $("refresh").textContent = "Refresh ⟳";
+};
+
+/* ── video recording (shared) ── */
+function pickMime() {
+  const M = window.MediaRecorder;
+  if (!M) return null;
+  for (const t of ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"])
+    if (M.isTypeSupported(t)) return t;
+  return null;
+}
+async function recordFrames(frameFns, name, progEl) {
+  // frameFns: array of async (ctx, W, H) => draws one frame
+  const mime = pickMime();
+  if (!mime) return toast("This browser can't record video — try Chrome or Safari");
+  const W = 768, H = 840;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  const stream = c.captureStream(30);
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const done = new Promise((res) => rec.onstop = res);
+  rec.start(200);
+  const HOLD = 420; // ms per frame
+  for (let i = 0; i < frameFns.length; i++) {
+    progEl.textContent = `recording · frame ${i + 1}/${frameFns.length}`;
+    await frameFns[i](x, W, H);
+    await new Promise((r) => setTimeout(r, HOLD));
+  }
+  await new Promise((r) => setTimeout(r, 400));
+  rec.stop(); await done;
+  progEl.textContent = "";
+  const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
+  const blob = new Blob(chunks, { type: mime.split(";")[0] });
+  dl(URL.createObjectURL(blob), `${name}.${ext}`);
+  toast(`Video saved as .${ext}${ext === "webm" ? " — this browser can't encode mp4; webm plays everywhere X/Discord do" : ""}`);
+}
+const loadImg = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+
+$("recvid").onclick = async () => {
+  const b = act(); if (!b) return;
+  stopPlay(); playing = true; // reuse prefetch gate
+  let months = seq($("pstart"), $("pstep"), b.age);
+  const ok = await prefetch(b, months, $("tl-progress"), "video");
+  playing = false;
+  if (ok === "nofuture") months = months.filter((m) => m <= b.age);
+  const glow = b.glow || "143,211,154";
+  const fns = months.map((m) => async (x, W, H) => {
+    const src = m === b.age ? b.image : (frames[b.id] || {})[m];
+    const img = src && await loadImg(src);
+    x.fillStyle = "#0d110d"; x.fillRect(0, 0, W, H);
+    if (img) {
+      x.save();
+      x.shadowColor = `rgba(${glow},.8)`; x.shadowBlur = 46;
+      x.imageSmoothingEnabled = false;
+      x.drawImage(img, 0, 0, W, W);
+      x.restore();
+    }
+    x.fillStyle = "rgba(221,213,194,.92)"; x.font = "26px monospace";
+    x.fillText(`${b.name} · month ${m} of ${FULL}`, 20, W + 44);
+    x.fillStyle = "rgba(127,139,128,.9)"; x.font = "18px monospace";
+    x.fillText("ON-CHAIN BONSAI · rendered by the contract", 20, W + 70);
+  });
+  await recordFrames(fns, `bonsai-${b.id}-life`, $("tl-progress"));
+};
+
+/* ── journal (bonsai rings) ── */
+$("record").onclick = () => {
+  const b = act(); if (!b) return;
+  const entry = { ts: Date.now(), age: b.age, stage: b.attrs["Stage"] || "", note: $("note").value.trim(), image: b.image };
+  state.journal[b.id] = [entry, ...(state.journal[b.id] || [])].slice(0, 40);
+  $("note").value = ""; save(); renderRings();
+  toast(`Ring recorded — ${b.name} at month ${entry.age}`);
+};
+function renderRings() {
+  const rings = state.journal[activeId] || [];
+  const wrap = $("rings");
+  wrap.innerHTML = rings.length ? "" : `<div class="empty">No rings yet. Record the first — it saves the artwork exactly as it is on-chain right now.</div>`;
+  rings.forEach((r, i) => {
+    const d = document.createElement("div");
+    d.className = "ring";
+    d.innerHTML = `<img class="ringimg" src="${r.image}" alt="ring month ${esc(r.age)}">
+      <div style="flex:1; min-width:0">
+        <div style="color:rgb(var(--glow))">month ${esc(r.age)}${r.stage ? " · " + esc(r.stage) : ""}</div>
+        <div style="color:var(--mute); font-size:15px">${new Date(r.ts).toLocaleDateString()} ${new Date(r.ts).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</div>
+        ${r.note ? `<div style="font-size:16px; overflow:hidden; text-overflow:ellipsis">“${esc(r.note)}”</div>` : ""}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px">
+        <button class="small view">View</button>
+        <button class="small del" style="color:var(--mute)">Delete</button>
+      </div>`;
+    d.querySelector(".view").onclick = () => { $("stage-img").src = r.image; $("tl-month").textContent = `month ${r.age} · recorded ring`; $("tl-note").textContent = "Recorded " + new Date(r.ts).toLocaleString() + " — press Today to return."; };
+    d.querySelector(".del").onclick = () => { state.journal[activeId].splice(i, 1); save(); renderRings(); };
+    wrap.appendChild(d);
+  });
+  const s = $("growth-summary");
+  if (rings.length > 1) {
+    const a = rings[0], z = rings[rings.length - 1];
+    s.style.display = "block";
+    $("growth-text").textContent = `+${(+a.age || 0) - (+z.age || 0)} months across ${rings.length} rings` + (a.stage !== z.stage ? ` · ${z.stage} → ${a.stage}` : "");
+  } else s.style.display = "none";
+}
+
+/* exports (lab) */
+$("png").onclick = async () => {
+  const b = act(); if (!b) return;
+  const img = await loadImg($("stage-img").src); if (!img) return;
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 1024;
+  const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+  x.drawImage(img, 0, 0, 1024, 1024);
+  c.toBlob((bl) => dl(URL.createObjectURL(bl), `bonsai-${b.id}-m${tlMonth ?? b.age}.png`));
+};
+$("svgbtn").onclick = () => {
+  const b = act(); if (!b) return;
+  const src = $("stage-img").src;
+  if (src.startsWith("data:image/svg")) {
+    const svg = src.includes(";base64,") ? atob(src.split(",")[1]) : decodeURIComponent(src.split(",")[1]);
+    dl(URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })), `bonsai-${b.id}.svg`);
+  } else dl(src, `bonsai-${b.id}.svg`);
+};
+function dl(href, name) { const a = document.createElement("a"); a.href = href; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(href), 4000); }
+
+/* ═══ STUDIO · COLLAGE ═══ */
+const LAYOUTS = [
+  { key:"3x3", name:"3 × 3", cols:3, rows:3 },
+  { key:"4x4", name:"4 × 4", cols:4, rows:4 },
+  { key:"2x3", name:"2 × 3", cols:3, rows:2 },
+  { key:"striph", name:"Strip ―", cols:5, rows:1 },
+  { key:"stripv", name:"Strip |", cols:1, rows:5 },
+  { key:"hero", name:"Hero + grid", hero:true },
+];
+let layout = LAYOUTS[0];
+const layWrap = $("layouts");
+LAYOUTS.forEach((L) => {
+  const bt = document.createElement("button");
+  bt.className = "lay" + (L === layout ? " active" : "");
+  bt.textContent = L.name;
+  bt.onclick = () => { layout = L; [...layWrap.children].forEach((c) => c.classList.remove("active")); bt.classList.add("active"); drawCollage(); };
+  layWrap.appendChild(bt);
+});
+$("cbg").oninput = () => drawCollage(); $("cgap").oninput = () => drawCollage(); $("ccap").onchange = () => drawCollage(); $("ctitle").oninput = () => drawCollage();
+$("cselall").onclick = () => { collageSel = state.garden.map((b) => b.id); renderGarden(); drawCollage(); };
+$("cclear").onclick = () => { collageSel = []; renderGarden(); drawCollage(); };
+
+let cMonth = null; // null = today per tree
+const imgCache = {};
+function getImgC(src) {
+  return new Promise((res) => {
+    if (imgCache[src]) return res(imgCache[src]);
+    const i = new Image();
+    i.onload = () => { imgCache[src] = i; res(i); };
+    i.onerror = () => res(null);
+    i.src = src;
+  });
+}
+const pool = () => collageSel.map((id) => state.garden.find((b) => b.id === id)).filter(Boolean);
+
+async function drawCollage(scale = 1, monthOverride = undefined) {
+  const m = monthOverride !== undefined ? monthOverride : cMonth;
+  const cv = scale === 1 ? $("collage-canvas") : document.createElement("canvas");
+  const S = 1024 * scale;
+  cv.width = S; cv.height = S;
+  const x = cv.getContext("2d");
+  x.imageSmoothingEnabled = false;
+  x.fillStyle = $("cbg").value; x.fillRect(0, 0, S, S);
+  const P = pool();
+  $("sel-count").textContent = P.length;
+  if (!P.length) {
+    x.fillStyle = "rgba(221,213,194,.5)"; x.font = `${28 * scale}px VT323, monospace`; x.textAlign = "center";
+    x.fillText("tap trees in your garden to add them", S / 2, S / 2);
+    x.textAlign = "left";
+    return cv;
+  }
+  const gap = +$("cgap").value * scale;
+  const cap = $("ccap").checked;
+  const capH = cap ? 52 * scale : 0;
+  const cells = [];
+  if (layout.hero) {
+    const big = (S - capH) * 0.66;
+    cells.push([gap, gap, big - gap, big - gap]);
+    const rx = big + gap, rw = S - big - gap * 2;
+    const rh = (big - gap - 3 * gap) / 4;
+    for (let i = 0; i < 4; i++) cells.push([rx, gap + i * (rh + gap), rw, rh]);
+  } else {
+    const { cols, rows } = layout;
+    const cw = (S - gap * (cols + 1)) / cols;
+    const ch = (S - capH - gap * (rows + 1)) / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push([gap + c * (cw + gap), gap + r * (ch + gap), cw, ch]);
+  }
+  for (let i = 0; i < cells.length; i++) {
+    const b = P[i % P.length];
+    let src = b.image;
+    if (m !== null && m !== undefined) src = (m === b.age ? b.image : (frames[b.id] || {})[m]) || b.image;
+    const img = await getImgC(src);
+    const [cx, cy, cw, ch] = cells[i];
+    if (img) {
+      const s2 = Math.min(cw / img.width, ch / img.height);
+      const w = img.width * s2, h = img.height * s2;
+      x.save();
+      x.shadowColor = `rgba(${b.glow || "143,211,154"},.55)`; x.shadowBlur = 22 * scale;
+      x.drawImage(img, cx + (cw - w) / 2, cy + (ch - h) / 2, w, h);
+      x.restore();
+    }
+    x.strokeStyle = "rgba(255,255,255,.08)"; x.strokeRect(cx + .5, cy + .5, cw - 1, ch - 1);
+  }
+  if (cap) {
+    const title = $("ctitle").value.trim();
+    x.fillStyle = "rgba(221,213,194,.9)"; x.font = `${26 * scale}px VT323, monospace`;
+    const mtxt = m === null || m === undefined ? "today" : "month " + m;
+    x.fillText(title || `ON-CHAIN BONSAI · ${P.length} tree${P.length > 1 ? "s" : ""} · ${mtxt} · it will outlive you`, gap || 12 * scale, S - 18 * scale);
+  }
+  return cv;
+}
+
+/* collage timeline */
+async function prefetchPool(months, progEl) {
+  const P = pool();
+  let noFut = false, total = 0, done = 0;
+  P.forEach((b) => { frames[b.id] = frames[b.id] || {}; total += months.filter((m) => m !== b.age && !frames[b.id][m]).length; });
+  for (const b of P) {
+    const missing = months.filter((m) => m !== b.age && !frames[b.id][m]);
+    const past = missing.filter((m) => m < b.age), fut = missing.filter((m) => m > b.age);
+    for (let i = 0; i < past.length; i += 6) {
+      const ch = past.slice(i, i + 6);
+      progEl.textContent = `fetching grove history · ${done}/${total} frames`;
+      try {
+        const rs = await rpcBatch(ch.map((m) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, hex(b.mintBlock + m * BPM + 60)] })));
+        ch.forEach((m, k) => { if (rs[k]) frames[b.id][m] = parseURI(decodeAbiString(rs[k])).image; });
+      } catch {}
+      for (const m of ch) if (!frames[b.id][m]) { try { await getFrame(b, m); } catch {} }
+      done += ch.length;
+    }
+    if (!noFut && fut.length) {
+      for (let i = 0; i < fut.length && !noFut; i += 6) {
+        const ch = fut.slice(i, i + 6);
+        progEl.textContent = `simulating grove future · ${done}/${total} frames`;
+        try {
+          const rs = await rpcBatch(ch.map((m) => ({ method: "eth_call", params: [{ to: CONTRACT, data: SEL_URI + pad64(b.id) }, "latest", {}, { number: hex(b.mintBlock + m * BPM + 60) }] })));
+          ch.forEach((m, k) => { if (rs[k]) { frames[b.id][m] = parseURI(decodeAbiString(rs[k])).image; futureOK = true; } });
+        } catch {}
+        for (const m of ch) if (!frames[b.id][m]) { try { await getFrame(b, m); } catch { noFut = true; break; } }
+        done += ch.length;
+      }
+    }
+  }
+  progEl.textContent = noFut ? "future frames unavailable — grove plays to today (set a custom RPC to unlock)" : "";
+  return noFut ? "nofuture" : true;
+}
+const groveAge = () => Math.max(0, ...pool().map((b) => b.age));
+
+let cPlaying = false, cTimer = null, cDeb;
+$("ctl").oninput = (e) => { stopCPlay(); clearTimeout(cDeb); $("ctl-note").textContent = "month " + e.target.value; cDeb = setTimeout(async () => {
+  cMonth = +e.target.value;
+  const ok = await prefetchPool([cMonth], $("ctl-progress"));
+  drawCollage();
+  $("ctl-note").textContent = ok === "nofuture" ? `some trees can't show month ${cMonth} on public RPCs — showing today for those` : `the grove at month ${cMonth}`;
+}, 200); };
+$("ctoday").onclick = () => { stopCPlay(); cMonth = null; $("ctl-note").textContent = "each tree as it stands today"; drawCollage(); };
+
+$("cplay").onclick = async () => {
+  if (cPlaying) return stopCPlay();
+  if (!pool().length) return toast("Select trees first");
+  cPlaying = true; $("cplay").textContent = "❚❚ Pause";
+  let months = seq($("cstart"), $("cstep"), groveAge());
+  const ok = await prefetchPool(months, $("ctl-progress"));
+  if (!cPlaying) return;
+  if (ok === "nofuture") months = months.filter((m) => m <= groveAge());
+  let i = 0;
+  cTimer = setInterval(async () => {
+    if (!cPlaying || i >= months.length) return stopCPlay();
+    cMonth = months[i]; $("ctl").value = cMonth;
+    $("ctl-note").textContent = "the grove at month " + cMonth;
+    await drawCollage();
+    i++;
+  }, 380);
+};
+function stopCPlay() { cPlaying = false; clearInterval(cTimer); $("cplay").textContent = "▸ Grow full life"; $("ctl-progress").textContent = ""; }
+
+$("crecvid").onclick = async () => {
+  if (!pool().length) return toast("Select trees first");
+  stopCPlay();
+  let months = seq($("cstart"), $("cstep"), groveAge());
+  const ok = await prefetchPool(months, $("ctl-progress"));
+  if (ok === "nofuture") months = months.filter((m) => m <= groveAge());
+  const fns = months.map((m) => async (x, W, H) => {
+    const cv = await drawCollage(1, m); // reuse 1024 canvas render
+    x.fillStyle = "#0d110d"; x.fillRect(0, 0, W, H);
+    x.imageSmoothingEnabled = false;
+    x.drawImage(cv, 0, 0, W, W);
+    x.fillStyle = "rgba(221,213,194,.92)"; x.font = "26px monospace";
+    x.fillText(`THE GROVE · month ${m} of ${FULL}`, 20, W + 44);
+    x.fillStyle = "rgba(127,139,128,.9)"; x.font = "18px monospace";
+    x.fillText("ON-CHAIN BONSAI · every tile rendered by the contract", 20, W + 70);
+  });
+  await recordFrames(fns, "bonsai-grove-life", $("ctl-progress"));
+  cMonth = null; drawCollage();
+};
+
+$("cexport").onclick = async () => {
+  const cv = await drawCollage(2);
+  cv.toBlob((bl) => dl(URL.createObjectURL(bl), "bonsai-collage.png"));
+  drawCollage();
+  toast("Collage exported — 2048px");
+};
+
+/* collage rings */
+$("crecord").onclick = async () => {
+  if (!pool().length) return toast("Select trees first");
+  const cv = await drawCollage(1);
+  const small = document.createElement("canvas"); small.width = 512; small.height = 512;
+  const sx = small.getContext("2d"); sx.imageSmoothingEnabled = false; sx.drawImage(cv, 0, 0, 512, 512);
+  const entry = { ts: Date.now(), ids: [...collageSel], month: cMonth, note: $("cnote").value.trim(), image: small.toDataURL("image/jpeg", 0.82) };
+  state.collageRings = [entry, ...(state.collageRings || [])].slice(0, 20);
+  $("cnote").value = ""; save(); renderCRings();
+  toast("Collage ring recorded — the whole grove, saved");
+};
+function renderCRings() {
+  const wrap = $("crings");
+  const rings = state.collageRings || [];
+  wrap.innerHTML = rings.length ? "" : `<div class="empty">No collage rings yet. Compose the grove and record it — repeat as it grows.</div>`;
+  rings.forEach((r, i) => {
+    const d = document.createElement("div");
+    d.className = "ring";
+    d.innerHTML = `<img class="ringimg" src="${r.image}" alt="collage ring">
+      <div style="flex:1; min-width:0">
+        <div style="color:rgb(var(--glow))">${r.ids.length} trees · ${r.month === null || r.month === undefined ? "today" : "month " + esc(r.month)}</div>
+        <div style="color:var(--mute); font-size:15px">${new Date(r.ts).toLocaleDateString()} ${new Date(r.ts).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })}</div>
+        ${r.note ? `<div style="font-size:16px; overflow:hidden; text-overflow:ellipsis">“${esc(r.note)}”</div>` : ""}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px">
+        <button class="small dlb">PNG</button>
+        <button class="small del" style="color:var(--mute)">Delete</button>
+      </div>`;
+    d.querySelector(".dlb").onclick = () => dl(r.image, `grove-ring-${i}.jpg`);
+    d.querySelector(".del").onclick = () => { state.collageRings.splice(i, 1); save(); renderCRings(); };
+    wrap.appendChild(d);
+  });
+}
+
+/* ═══ STUDIO · PIXEL EDITOR ═══ */
+const pxc = $("px-canvas"), pxx = pxc.getContext("2d");
+let pxRes = 48, pxData = null, pxTool = "paint", pxColor = "#8fd39a", pxUndo = [], pxDown = false;
+function pxInit(res) {
+  pxRes = res;
+  pxData = new Uint8ClampedArray(res * res * 4);
+  pxUndo = [];
+  pxDraw();
+}
+function pxDraw() {
+  const S = pxc.width;
+  pxx.imageSmoothingEnabled = false;
+  pxx.fillStyle = "#0b0e0b"; pxx.fillRect(0, 0, S, S);
+  if (pxData) {
+    const off = document.createElement("canvas"); off.width = pxRes; off.height = pxRes;
+    off.getContext("2d").putImageData(new ImageData(pxData.slice(), pxRes, pxRes), 0, 0);
+    pxx.drawImage(off, 0, 0, S, S);
+  }
+  if ($("px-grid").checked && pxRes <= 64) {
+    pxx.strokeStyle = "rgba(255,255,255,.05)";
+    const cs = S / pxRes;
+    for (let i = 1; i < pxRes; i++) {
+      pxx.beginPath(); pxx.moveTo(i * cs, 0); pxx.lineTo(i * cs, S); pxx.stroke();
+      pxx.beginPath(); pxx.moveTo(0, i * cs); pxx.lineTo(S, i * cs); pxx.stroke();
+    }
+  }
+}
+$("px-grid").onchange = pxDraw;
+$("px-res").onchange = (e) => { if (confirm("Change grid size? Current pixels will be cleared.")) pxInit(+e.target.value); else e.target.value = pxRes; };
+
+$("px-load").onclick = async () => {
+  const b = act();
+  if (!b) return toast("Plant and select a bonsai first");
+  const src = tab === "studio" && cMonth !== null && cMonth !== undefined ? ((frames[b.id] || {})[cMonth] || b.image) : ($("stage-img").src || b.image);
+  const img = await loadImg(src);
+  if (!img) return toast("Couldn't load the artwork");
+  const res = pxRes;
+  const off = document.createElement("canvas"); off.width = res; off.height = res;
+  const ox = off.getContext("2d"); ox.imageSmoothingEnabled = false;
+  ox.drawImage(img, 0, 0, res, res);
+  pxData = ox.getImageData(0, 0, res, res).data.slice();
+  pxUndo = [];
+  buildPalette();
+  pxDraw();
+  toast(`${b.name} on the easel — ${res}×${res}`);
+};
+function buildPalette() {
+  const tally = {};
+  for (let i = 0; i < pxData.length; i += 4) {
+    if (pxData[i + 3] < 200) continue;
+    const k = `${pxData[i]},${pxData[i+1]},${pxData[i+2]}`;
+    tally[k] = (tally[k] || 0) + 1;
+  }
+  const top = Object.entries(tally).sort((a, b2) => b2[1] - a[1]).slice(0, 12);
+  const pal = $("px-pal"); pal.innerHTML = "";
+  top.forEach(([k]) => {
+    const bt = document.createElement("button");
+    bt.className = "sw";
+    bt.style.background = `rgb(${k})`;
+    bt.onclick = () => { pxColor = "#" + k.split(",").map((v) => (+v).toString(16).padStart(2, "0")).join(""); $("px-color").value = pxColor; [...pal.children].forEach((c) => c.classList.remove("active")); bt.classList.add("active"); };
+    pal.appendChild(bt);
+  });
+}
+document.querySelectorAll(".tool").forEach((bt) => bt.onclick = () => {
+  document.querySelectorAll(".tool").forEach((c) => c.classList.remove("active"));
+  bt.classList.add("active"); pxTool = bt.dataset.t;
+});
+$("px-color").oninput = (e) => pxColor = e.target.value;
+$("px-undo").onclick = () => { if (pxUndo.length) { pxData = pxUndo.pop(); pxDraw(); } };
+$("px-clear").onclick = () => { if (pxData && confirm("Clear the easel?")) { pxUndo.push(pxData.slice()); pxData.fill(0); pxDraw(); } };
+
+function pxPos(e) {
+  const r = pxc.getBoundingClientRect();
+  const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+  const cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+  return [Math.floor(cx / r.width * pxRes), Math.floor(cy / r.height * pxRes)];
+}
+function pxApply(gx, gy) {
+  if (!pxData || gx < 0 || gy < 0 || gx >= pxRes || gy >= pxRes) return;
+  const i = (gy * pxRes + gx) * 4;
+  const [r, g, b2] = hexRGBv(pxColor);
+  if (pxTool === "paint") { pxData[i] = r; pxData[i+1] = g; pxData[i+2] = b2; pxData[i+3] = 255; }
+  else if (pxTool === "erase") { pxData[i+3] = 0; }
+  else if (pxTool === "pick") {
+    if (pxData[i+3] > 0) { pxColor = "#" + [pxData[i], pxData[i+1], pxData[i+2]].map((v) => v.toString(16).padStart(2, "0")).join(""); $("px-color").value = pxColor; }
+    return;
+  } else if (pxTool === "fill") {
+    const t = [pxData[i], pxData[i+1], pxData[i+2], pxData[i+3]];
+    if (t[0] === r && t[1] === g && t[2] === b2 && t[3] === 255) return;
+    const st = [[gx, gy]];
+    let guard = 0;
+    while (st.length && guard++ < pxRes * pxRes * 4) {
+      const [X, Y] = st.pop();
+      if (X < 0 || Y < 0 || X >= pxRes || Y >= pxRes) continue;
+      const j = (Y * pxRes + X) * 4;
+      if (pxData[j] !== t[0] || pxData[j+1] !== t[1] || pxData[j+2] !== t[2] || pxData[j+3] !== t[3]) continue;
+      pxData[j] = r; pxData[j+1] = g; pxData[j+2] = b2; pxData[j+3] = 255;
+      st.push([X+1,Y],[X-1,Y],[X,Y+1],[X,Y-1]);
+    }
+  }
+  pxDraw();
+}
+const hexRGBv = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+pxc.addEventListener("pointerdown", (e) => { if (!pxData) return toast("Load a bonsai or clear-start first"); pxDown = true; pxUndo.push(pxData.slice()); if (pxUndo.length > 24) pxUndo.shift(); pxApply(...pxPos(e)); });
+pxc.addEventListener("pointermove", (e) => { if (pxDown && (pxTool === "paint" || pxTool === "erase")) pxApply(...pxPos(e)); });
+window.addEventListener("pointerup", () => pxDown = false);
+$("px-export").onclick = () => {
+  if (!pxData) return toast("Nothing on the easel yet");
+  const S = 1536;
+  const c = document.createElement("canvas"); c.width = S; c.height = S;
+  const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+  const off = document.createElement("canvas"); off.width = pxRes; off.height = pxRes;
+  off.getContext("2d").putImageData(new ImageData(pxData.slice(), pxRes, pxRes), 0, 0);
+  x.fillStyle = "#0b0e0b"; x.fillRect(0, 0, S, S);
+  x.drawImage(off, 0, 0, S, S);
+  c.toBlob((bl) => dl(URL.createObjectURL(bl), "bonsai-remix.png"));
+};
+
+/* ═══ tabs & studio modes ═══ */
+$("tab-lab").onclick = () => switchTab("lab");
+$("tab-studio").onclick = () => switchTab("studio");
+function switchTab(t2) {
+  tab = t2;
+  $("tab-lab").classList.toggle("active", tab === "lab");
+  $("tab-studio").classList.toggle("active", tab === "studio");
+  $("view-lab").style.display = tab === "lab" ? "" : "none";
+  $("view-studio").style.display = tab === "studio" ? "" : "none";
+  renderGarden();
+  if (tab === "studio") { drawCollage(); renderCRings(); }
+}
+$("m-collage").onclick = () => studioMode("collage");
+$("m-pixels").onclick = () => studioMode("pixels");
+function studioMode(m) {
+  $("m-collage").classList.toggle("active", m === "collage");
+  $("m-pixels").classList.toggle("active", m === "pixels");
+  $("studio-collage").style.display = m === "collage" ? "grid" : "none";
+  $("studio-pixels").style.display = m === "pixels" ? "grid" : "none";
+  if (m === "pixels" && !pxData) pxInit(pxRes);
+}
+
+/* ── boot ── */
+renderGarden(); renderActive(); renderCRings();
+applyGlow(act()?.glow);
+(async () => {
+  for (const b of state.garden) {
+    if (Date.now() - (b.fetchedAt || 0) > 3600e3 || !b.glow) {
+      try { Object.assign(b, await fetchBonsai(b.id)); save(); if (b.id === activeId && tab === "lab" && tlMonth === null) { renderActive(); applyGlow(b.glow); } renderGarden(); } catch {}
+    }
+  }
+})();
+</script>
+</body>
+</html>
