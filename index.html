@@ -855,9 +855,10 @@ $("refresh").onclick = async () => {
    📱 SCREENSAVER EXPORT
    1-hour portrait video, full bonsai life 0→120
    Each month holds for totalSec/120 seconds.
-   We render at 24 fps with a slow cross-fade
-   between monthly frames plus foliage-tinted
-   particle drift — no fast cuts, meditative.
+   Art is composited flat to an offscreen canvas
+   once per month — no per-frame redraw = no pulse.
+   Leaves fall continuously and independently over
+   the static scene. Tree growth is the only cut.
    ═══════════════════════════════════════════ */
 $("screensaver").onclick = () => {
   const p = $("ss-panel");
@@ -869,7 +870,6 @@ $("ss-go").onclick = async () => {
   const mime = pickMime();
   if (!mime) return toast("This browser can't record video — use Chrome or Safari on desktop");
 
-  // collect all 121 months (0..120)
   const MONTHS = Array.from({ length: FULL + 1 }, (_, i) => i);
   $("ss-progress").textContent = "fetching all frames from the contract…";
   $("ss-bar-wrap").style.display = "block"; $("ss-bar").style.width = "0%";
@@ -877,29 +877,28 @@ $("ss-go").onclick = async () => {
   const ok = await prefetch(b, MONTHS, $("ss-progress"), "video");
   playing = false;
   if (!ok && ok !== "nofuture") { $("ss-progress").textContent = "Frame fetch failed — check RPC settings"; return; }
-  // build ordered frame list — stop at today if future unavailable
   const monthList = ok === "nofuture" ? MONTHS.filter((m) => m <= b.age) : MONTHS;
 
-  const TOTAL_SEC = parseInt($("ss-dur").value, 10);        // 3600, 1800 or 7200
+  const TOTAL_SEC = parseInt($("ss-dur").value, 10);
   const FPS = 24;
-  const SEC_PER_MONTH = TOTAL_SEC / monthList.length;       // ~30 s each
-  const FRAMES_PER_MONTH = Math.round(SEC_PER_MONTH * FPS); // 720 frames @ 1hr/24fps
-  const XFADE = Math.round(FPS * 2.5);                      // 2.5-second dissolve
+  const SEC_PER_MONTH = TOTAL_SEC / monthList.length;
+  const FRAMES_PER_MONTH = Math.round(SEC_PER_MONTH * FPS);
+  const XFADE = Math.round(FPS * 3);   // 3-second dissolve between growth stages
   const BITRATE = parseInt($("ss-qual").value, 10);
   const glow = b.glow || "143,211,154";
   const glowRGB = glow.split(",").map(Number);
   const showCaption = $("ss-caption").checked;
-  const showParticles = $("ss-particles").checked;
+  const showLeaves = $("ss-particles").checked;
 
-  // canvas dimensions by orientation
   const orient = $("ss-orient").value;
   const W = orient === "portrait" ? 1080 : orient === "square" ? 1080 : 1920;
   const H = orient === "portrait" ? 1920 : orient === "square" ? 1080 : 1080;
-  const ART_W = Math.min(W, H);    // art is always square, centred
+  const ART_W = Math.min(W, H);
   const ART_X = (W - ART_W) / 2;
   const CAP_H = showCaption ? Math.round(H * 0.055) : 0;
   const ART_Y = Math.round((H - ART_W - CAP_H) / 2);
 
+  /* output canvas */
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const x = cv.getContext("2d");
   const stream = cv.captureStream(FPS);
@@ -909,97 +908,173 @@ $("ss-go").onclick = async () => {
   const recDone = new Promise((res) => rec.onstop = res);
   rec.start(500);
 
-  // particle system for atmospheric drift
-  const NPART = 28;
-  const particles = Array.from({ length: NPART }, () => ({
-    x: Math.random() * W, y: Math.random() * H,
-    r: 1 + Math.random() * 3, vx: (Math.random() - .5) * .4, vy: -.15 - Math.random() * .35,
-    a: Math.random(), da: (Math.random() - .5) * .005,
+  /* ── offscreen: pre-render static scene (bg + art + caption) once per month ── */
+  const sceneA = document.createElement("canvas"); sceneA.width = W; sceneA.height = H;
+  const sceneB = document.createElement("canvas"); sceneB.width = W; sceneB.height = H;
+
+  function buildScene(canvas, img, m) {
+    const sx = canvas.getContext("2d");
+    const prog = m / FULL;
+    // background — deepens very slowly across life, no per-frame change
+    sx.fillStyle = `rgb(${Math.round(10+prog*5)},${Math.round(16+prog*10)},${Math.round(10+prog*5)})`;
+    sx.fillRect(0, 0, W, H);
+    // fixed radial halo — drawn once, stays still
+    const grad = sx.createRadialGradient(W/2, ART_Y + ART_W*0.44, ART_W*0.05, W/2, ART_Y + ART_W*0.44, ART_W*0.68);
+    grad.addColorStop(0, `rgba(${glow},.20)`);
+    grad.addColorStop(0.5, `rgba(${glow},.06)`);
+    grad.addColorStop(1, "transparent");
+    sx.fillStyle = grad; sx.fillRect(0, 0, W, H);
+    // art — drawn once with fixed shadow, will never pulse
+    if (img) {
+      sx.save();
+      sx.shadowColor = `rgba(${glow},.65)`; sx.shadowBlur = Math.round(ART_W * 0.055);
+      sx.imageSmoothingEnabled = false;
+      sx.drawImage(img, ART_X, ART_Y, ART_W, ART_W);
+      sx.restore();
+    }
+    // caption
+    if (showCaption) {
+      const cy = H - CAP_H;
+      sx.fillStyle = "rgba(0,0,0,.55)"; sx.fillRect(0, cy, W, CAP_H);
+      const fs = Math.round(CAP_H * 0.48);
+      sx.fillStyle = `rgba(${glow},1)`; sx.font = `${fs}px 'VT323', monospace`; sx.textAlign = "center";
+      sx.fillText(`${b.name}  ·  month ${m} of ${FULL}`, W/2, cy + CAP_H*0.7);
+      sx.fillStyle = "rgba(127,139,128,.8)"; sx.font = `${Math.round(fs*0.56)}px monospace`;
+      sx.fillText("ON-CHAIN BONSAI  ·  rendered by the contract", W/2, cy + CAP_H*0.92);
+      sx.textAlign = "left";
+    }
+  }
+
+  /* ── falling leaf system ──
+     Leaves start scattered above the visible area,
+     fall at constant velocity with a gentle side drift and
+     slow rotation. They never stop; this runs frame-by-frame
+     completely independent of the art layer underneath. ── */
+  const NLEAVES = showLeaves ? 38 : 0;
+  function rndLeaf() {
+    // random start: spread across full width, randomly distributed vertically
+    return {
+      x: Math.random() * W,
+      y: Math.random() * (H + 200) - 100,       // start anywhere top to bottom
+      vy: 0.55 + Math.random() * 1.1,            // consistent downward fall
+      vx: (Math.random() - 0.5) * 0.55,          // gentle horizontal drift
+      rot: Math.random() * Math.PI * 2,
+      drot: (Math.random() - 0.5) * 0.032,       // slow steady rotation
+      w: 6 + Math.random() * 10,                 // leaf length
+      a: 0.35 + Math.random() * 0.55,            // fixed opacity — no pulsing
+      wobble: Math.random() * Math.PI * 2,        // phase for side sway
+    };
+  }
+  const leaves = Array.from({ length: NLEAVES }, rndLeaf);
+
+  const tickLeaves = (frame) => {
+    leaves.forEach((l) => {
+      l.y += l.vy;
+      l.wobble += 0.018;
+      l.x += l.vx + Math.sin(l.wobble) * 0.38;  // sinusoidal sway
+      l.rot += l.drot;
+      if (l.y > H + 30) Object.assign(l, rndLeaf(), { y: -20, x: Math.random() * W });
+    });
+  };
+
+  const drawLeaves = () => {
+    if (!NLEAVES) return;
+    leaves.forEach((l) => {
+      x.save();
+      x.translate(l.x, l.y);
+      x.rotate(l.rot);
+      x.globalAlpha = l.a;
+      // leaf shape: pointed ellipse
+      x.beginPath();
+      x.ellipse(0, 0, l.w * 0.38, l.w, 0, 0, Math.PI * 2);
+      x.fillStyle = `rgba(${glowRGB[0]},${glowRGB[1]},${glowRGB[2]},1)`;
+      x.fill();
+      // leaf mid-vein
+      x.strokeStyle = `rgba(0,0,0,0.25)`; x.lineWidth = 0.8;
+      x.beginPath(); x.moveTo(0, -l.w); x.lineTo(0, l.w); x.stroke();
+      x.restore();
+    });
+    x.globalAlpha = 1;
+  };
+
+  /* sparkle dots — fixed-count, random positions, low constant opacity — also no pulse */
+  const NSPARK = 18;
+  const sparks = Array.from({ length: NSPARK }, () => ({
+    x: Math.random()*W, y: Math.random()*H,
+    r: 0.8 + Math.random()*1.8,
+    a: 0.1 + Math.random()*0.28,
+    vx: (Math.random()-0.5)*0.15, vy: (Math.random()-0.5)*0.15,
+    twinklePhase: Math.random()*Math.PI*2,
   }));
-  const tickParticles = () => particles.forEach((p) => {
-    p.x += p.vx; p.y += p.vy; p.a = Math.max(0, Math.min(1, p.a + p.da));
-    if (p.y < -10) { p.y = H + 10; p.x = Math.random() * W; }
-    if (p.a <= 0 || p.a >= 1) p.da *= -1;
-  });
+  const tickSparks = (frame) => {
+    sparks.forEach((s) => {
+      s.x += s.vx; s.y += s.vy;
+      s.twinklePhase += 0.04;
+      if (s.x < 0 || s.x > W) s.vx *= -1;
+      if (s.y < 0 || s.y > H) s.vy *= -1;
+    });
+  };
+  const drawSparks = (frame) => {
+    sparks.forEach((s) => {
+      // subtle twinkle — amplitude is small so never feels like a pulse
+      const a = s.a + Math.sin(s.twinklePhase) * 0.07;
+      x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7);
+      x.fillStyle = `rgba(${glowRGB[0]},${glowRGB[1]},${glowRGB[2]},${a})`;
+      x.fill();
+    });
+  };
 
   const getFrameSrc = (m) => m === b.age ? b.image : (frames[b.id] || {})[m];
   const imgCache2 = {};
   const getImg2 = (src) => src
-    ? imgCache2[src] || (imgCache2[src] = loadImg(src).then((i) => { imgCache2[src] = i; return i; }))
+    ? (imgCache2[src] instanceof HTMLImageElement
+        ? Promise.resolve(imgCache2[src])
+        : (imgCache2[src] = loadImg(src).then((i) => (imgCache2[src] = i, i))))
     : Promise.resolve(null);
 
   const totalFrames = monthList.length * FRAMES_PER_MONTH;
   let rendered = 0;
-
-  const drawBg = (m) => {
-    // rich dark background with a foliage-tinted radial wash
-    const prog = m / FULL;
-    x.fillStyle = `rgb(${Math.round(10 + prog * 4)},${Math.round(16 + prog * 8)},${Math.round(10 + prog * 4)})`;
-    x.fillRect(0, 0, W, H);
-    // top glow halo
-    const grad = x.createRadialGradient(W / 2, ART_Y + ART_W * 0.42, ART_W * 0.1, W / 2, ART_Y + ART_W * 0.42, ART_W * 0.72);
-    grad.addColorStop(0, `rgba(${glow},.18)`);
-    grad.addColorStop(1, "transparent");
-    x.fillStyle = grad; x.fillRect(0, 0, W, H);
-  };
-  const drawArt = (img, alpha) => {
-    if (!img) return;
-    x.save();
-    x.globalAlpha = alpha;
-    x.shadowColor = `rgba(${glow},.75)`; x.shadowBlur = Math.round(ART_W * 0.06);
-    x.imageSmoothingEnabled = false;
-    x.drawImage(img, ART_X, ART_Y, ART_W, ART_W);
-    x.restore();
-  };
-  const drawParticles = (alpha) => {
-    if (!showParticles) return;
-    particles.forEach((p) => {
-      x.beginPath();
-      x.arc(p.x, p.y, p.r, 0, 7);
-      x.fillStyle = `rgba(${glowRGB[0]},${glowRGB[1]},${glowRGB[2]},${p.a * alpha * .6})`;
-      x.fill();
-    });
-  };
-  const drawCaption = (m) => {
-    if (!showCaption) return;
-    const cy = H - CAP_H;
-    x.fillStyle = "rgba(0,0,0,.55)"; x.fillRect(0, cy, W, CAP_H);
-    const fs = Math.round(CAP_H * 0.48);
-    x.fillStyle = `rgba(${glow},1)`; x.font = `${fs}px 'VT323', monospace`; x.textAlign = "center";
-    x.fillText(`${b.name}  ·  month ${m} of ${FULL}`, W / 2, cy + CAP_H * 0.7);
-    x.fillStyle = "rgba(127,139,128,.8)"; x.font = `${Math.round(fs * 0.56)}px monospace`;
-    x.fillText("ON-CHAIN BONSAI  ·  rendered by the contract", W / 2, cy + CAP_H * 0.92);
-    x.textAlign = "left";
-  };
-
-  const FRAME_MS = 1000 / FPS;
+  let globalFrame = 0; // continuous frame counter across all months — keeps leaf flow uninterrupted
 
   for (let mi = 0; mi < monthList.length; mi++) {
     const m = monthList[mi];
     const mNext = monthList[Math.min(mi + 1, monthList.length - 1)];
     const [imgA, imgB] = await Promise.all([getImg2(getFrameSrc(m)), getImg2(getFrameSrc(mNext))]);
 
+    // build static scenes (once per transition pair)
+    buildScene(sceneA, imgA, m);
+    buildScene(sceneB, imgB, mNext);
+
     for (let f = 0; f < FRAMES_PER_MONTH; f++) {
-      // cross-fade in the last XFADE frames of each month
-      const fadeAlpha = f >= FRAMES_PER_MONTH - XFADE
-        ? (f - (FRAMES_PER_MONTH - XFADE)) / XFADE : 0;
+      // dissolve: only in the last XFADE frames of each month
+      const inFade = f >= FRAMES_PER_MONTH - XFADE;
+      const fadeAlpha = inFade ? (f - (FRAMES_PER_MONTH - XFADE)) / XFADE : 0;
 
-      drawBg(m);
-      drawArt(imgA, 1 - fadeAlpha);
-      if (fadeAlpha > 0) drawArt(imgB, fadeAlpha);
-      tickParticles();
-      drawParticles(1);
-      drawCaption(m);
+      // composite: draw pre-built scenes (no recalculation = no pulse)
+      x.globalAlpha = 1;
+      x.drawImage(sceneA, 0, 0);
+      if (fadeAlpha > 0) {
+        x.globalAlpha = fadeAlpha;
+        x.drawImage(sceneB, 0, 0);
+        x.globalAlpha = 1;
+      }
 
-      rendered++;
-      // update progress every 120 frames (~5s at 24fps)
+      // animate leaves & sparks on top — continuous, never reset between months
+      tickLeaves(globalFrame);
+      tickSparks(globalFrame);
+      drawLeaves();
+      drawSparks(globalFrame);
+
+      rendered++; globalFrame++;
+
       if (rendered % 120 === 0) {
         const pct = Math.round(rendered / totalFrames * 100);
         $("ss-bar").style.width = pct + "%";
-        $("ss-progress").textContent = `encoding · month ${m + 1}/${monthList.length} · ${pct}% done · ~${Math.round((totalFrames - rendered) / FPS / 60)} min left`;
-        await new Promise((r) => setTimeout(r, 0)); // yield to browser
+        $("ss-progress").textContent = `encoding · month ${m+1}/${monthList.length} · ${pct}% · ~${Math.round((totalFrames - rendered) / FPS / 60)} min left`;
+        await new Promise((r) => setTimeout(r, 0));
       }
-      await new Promise((r) => setTimeout(r, FRAME_MS * .12)); // slight throttle
+      // minimal yield — just enough to not freeze the tab
+      if (rendered % 6 === 0) await new Promise((r) => setTimeout(r, 0));
     }
   }
 
@@ -1011,7 +1086,7 @@ $("ss-go").onclick = async () => {
   const blob = new Blob(chunks, { type: mime.split(";")[0] });
   const sizeMB = Math.round(blob.size / 1e6);
   dl(URL.createObjectURL(blob), `bonsai-${b.id}-screensaver-${orient}.${ext}`);
-  $("ss-progress").textContent = `Done — ${sizeMB} MB · set it as a live wallpaper on your phone (repeat on loop)`;
+  $("ss-progress").textContent = `Done — ${sizeMB} MB · set on repeat as a live wallpaper`;
   $("ss-bar").style.width = "100%";
   toast(`📱 Screensaver downloaded (${sizeMB} MB .${ext})`);
 };
