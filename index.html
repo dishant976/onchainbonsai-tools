@@ -150,8 +150,50 @@
                 <button id="refresh" class="small">Refresh ⟳</button>
                 <button id="png" class="small">Save PNG</button>
                 <button id="svgbtn" class="small">Raw SVG</button>
+                <button id="screensaver" class="primary small">📱 Screensaver video</button>
               </div>
               <div id="tl-progress" style="color:var(--mute); font-size:14px; margin-top:6px"></div>
+              <!-- screensaver options panel (hidden until button clicked) -->
+              <div id="ss-panel" style="display:none; margin-top:12px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px">
+                <div style="font-size:20px; color:rgb(var(--glow)); margin-bottom:6px">📱 Screensaver export</div>
+                <p style="color:var(--mute); font-size:15px; margin-bottom:12px">
+                  A 1-hour portrait video — 120 months of growth, 30 seconds per month, perfect for phone lock screens and live wallpapers.
+                  Set it on repeat and your bonsai grows in real time with you.
+                </p>
+                <div class="rowc" style="flex-wrap:wrap; gap:14px; margin-bottom:12px">
+                  <label class="rowc" style="color:var(--mute)">Orientation
+                    <select id="ss-orient">
+                      <option value="portrait">Portrait 9:16 (phone)</option>
+                      <option value="square">Square 1:1 (iPad / widget)</option>
+                      <option value="landscape">Landscape 16:9 (TV / desktop)</option>
+                    </select>
+                  </label>
+                  <label class="rowc" style="color:var(--mute)">Duration
+                    <select id="ss-dur">
+                      <option value="3600">1 hour (30 sec/month)</option>
+                      <option value="1800">30 min (15 sec/month)</option>
+                      <option value="7200">2 hours (60 sec/month)</option>
+                    </select>
+                  </label>
+                  <label class="rowc" style="color:var(--mute)">Quality
+                    <select id="ss-qual">
+                      <option value="8000000">High (8 Mbps)</option>
+                      <option value="4000000">Medium (4 Mbps)</option>
+                      <option value="16000000">Very high (16 Mbps)</option>
+                    </select>
+                  </label>
+                  <label class="rowc" style="color:var(--mute)"><input type="checkbox" id="ss-caption" checked> caption bar</label>
+                  <label class="rowc" style="color:var(--mute)"><input type="checkbox" id="ss-particles" checked> glow particles</label>
+                </div>
+                <div class="rowc">
+                  <button id="ss-go" class="primary">⬇ Generate &amp; download</button>
+                  <span style="color:var(--mute); font-size:14px">takes 2–4 min to encode · browser must stay open</span>
+                </div>
+                <div id="ss-progress" style="margin-top:10px; color:var(--mute); font-size:15px; min-height:20px"></div>
+                <div id="ss-bar-wrap" style="display:none; margin-top:8px; background:var(--ink); border-radius:4px; height:6px; overflow:hidden">
+                  <div id="ss-bar" style="height:100%; background:rgb(var(--glow)); width:0%; transition:width .3s"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -809,7 +851,170 @@ $("refresh").onclick = async () => {
   $("refresh").textContent = "Refresh ⟳";
 };
 
-/* ── video recording (shared) ── */
+/* ═══════════════════════════════════════════
+   📱 SCREENSAVER EXPORT
+   1-hour portrait video, full bonsai life 0→120
+   Each month holds for totalSec/120 seconds.
+   We render at 24 fps with a slow cross-fade
+   between monthly frames plus foliage-tinted
+   particle drift — no fast cuts, meditative.
+   ═══════════════════════════════════════════ */
+$("screensaver").onclick = () => {
+  const p = $("ss-panel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+};
+
+$("ss-go").onclick = async () => {
+  const b = act(); if (!b) return;
+  const mime = pickMime();
+  if (!mime) return toast("This browser can't record video — use Chrome or Safari on desktop");
+
+  // collect all 121 months (0..120)
+  const MONTHS = Array.from({ length: FULL + 1 }, (_, i) => i);
+  $("ss-progress").textContent = "fetching all frames from the contract…";
+  $("ss-bar-wrap").style.display = "block"; $("ss-bar").style.width = "0%";
+  stopPlay(); playing = true;
+  const ok = await prefetch(b, MONTHS, $("ss-progress"), "video");
+  playing = false;
+  if (!ok && ok !== "nofuture") { $("ss-progress").textContent = "Frame fetch failed — check RPC settings"; return; }
+  // build ordered frame list — stop at today if future unavailable
+  const monthList = ok === "nofuture" ? MONTHS.filter((m) => m <= b.age) : MONTHS;
+
+  const TOTAL_SEC = parseInt($("ss-dur").value, 10);        // 3600, 1800 or 7200
+  const FPS = 24;
+  const SEC_PER_MONTH = TOTAL_SEC / monthList.length;       // ~30 s each
+  const FRAMES_PER_MONTH = Math.round(SEC_PER_MONTH * FPS); // 720 frames @ 1hr/24fps
+  const XFADE = Math.round(FPS * 2.5);                      // 2.5-second dissolve
+  const BITRATE = parseInt($("ss-qual").value, 10);
+  const glow = b.glow || "143,211,154";
+  const glowRGB = glow.split(",").map(Number);
+  const showCaption = $("ss-caption").checked;
+  const showParticles = $("ss-particles").checked;
+
+  // canvas dimensions by orientation
+  const orient = $("ss-orient").value;
+  const W = orient === "portrait" ? 1080 : orient === "square" ? 1080 : 1920;
+  const H = orient === "portrait" ? 1920 : orient === "square" ? 1080 : 1080;
+  const ART_W = Math.min(W, H);    // art is always square, centred
+  const ART_X = (W - ART_W) / 2;
+  const CAP_H = showCaption ? Math.round(H * 0.055) : 0;
+  const ART_Y = Math.round((H - ART_W - CAP_H) / 2);
+
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const x = cv.getContext("2d");
+  const stream = cv.captureStream(FPS);
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: BITRATE });
+  const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const recDone = new Promise((res) => rec.onstop = res);
+  rec.start(500);
+
+  // particle system for atmospheric drift
+  const NPART = 28;
+  const particles = Array.from({ length: NPART }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: 1 + Math.random() * 3, vx: (Math.random() - .5) * .4, vy: -.15 - Math.random() * .35,
+    a: Math.random(), da: (Math.random() - .5) * .005,
+  }));
+  const tickParticles = () => particles.forEach((p) => {
+    p.x += p.vx; p.y += p.vy; p.a = Math.max(0, Math.min(1, p.a + p.da));
+    if (p.y < -10) { p.y = H + 10; p.x = Math.random() * W; }
+    if (p.a <= 0 || p.a >= 1) p.da *= -1;
+  });
+
+  const getFrameSrc = (m) => m === b.age ? b.image : (frames[b.id] || {})[m];
+  const imgCache2 = {};
+  const getImg2 = (src) => src
+    ? imgCache2[src] || (imgCache2[src] = loadImg(src).then((i) => { imgCache2[src] = i; return i; }))
+    : Promise.resolve(null);
+
+  const totalFrames = monthList.length * FRAMES_PER_MONTH;
+  let rendered = 0;
+
+  const drawBg = (m) => {
+    // rich dark background with a foliage-tinted radial wash
+    const prog = m / FULL;
+    x.fillStyle = `rgb(${Math.round(10 + prog * 4)},${Math.round(16 + prog * 8)},${Math.round(10 + prog * 4)})`;
+    x.fillRect(0, 0, W, H);
+    // top glow halo
+    const grad = x.createRadialGradient(W / 2, ART_Y + ART_W * 0.42, ART_W * 0.1, W / 2, ART_Y + ART_W * 0.42, ART_W * 0.72);
+    grad.addColorStop(0, `rgba(${glow},.18)`);
+    grad.addColorStop(1, "transparent");
+    x.fillStyle = grad; x.fillRect(0, 0, W, H);
+  };
+  const drawArt = (img, alpha) => {
+    if (!img) return;
+    x.save();
+    x.globalAlpha = alpha;
+    x.shadowColor = `rgba(${glow},.75)`; x.shadowBlur = Math.round(ART_W * 0.06);
+    x.imageSmoothingEnabled = false;
+    x.drawImage(img, ART_X, ART_Y, ART_W, ART_W);
+    x.restore();
+  };
+  const drawParticles = (alpha) => {
+    if (!showParticles) return;
+    particles.forEach((p) => {
+      x.beginPath();
+      x.arc(p.x, p.y, p.r, 0, 7);
+      x.fillStyle = `rgba(${glowRGB[0]},${glowRGB[1]},${glowRGB[2]},${p.a * alpha * .6})`;
+      x.fill();
+    });
+  };
+  const drawCaption = (m) => {
+    if (!showCaption) return;
+    const cy = H - CAP_H;
+    x.fillStyle = "rgba(0,0,0,.55)"; x.fillRect(0, cy, W, CAP_H);
+    const fs = Math.round(CAP_H * 0.48);
+    x.fillStyle = `rgba(${glow},1)`; x.font = `${fs}px 'VT323', monospace`; x.textAlign = "center";
+    x.fillText(`${b.name}  ·  month ${m} of ${FULL}`, W / 2, cy + CAP_H * 0.7);
+    x.fillStyle = "rgba(127,139,128,.8)"; x.font = `${Math.round(fs * 0.56)}px monospace`;
+    x.fillText("ON-CHAIN BONSAI  ·  rendered by the contract", W / 2, cy + CAP_H * 0.92);
+    x.textAlign = "left";
+  };
+
+  const FRAME_MS = 1000 / FPS;
+
+  for (let mi = 0; mi < monthList.length; mi++) {
+    const m = monthList[mi];
+    const mNext = monthList[Math.min(mi + 1, monthList.length - 1)];
+    const [imgA, imgB] = await Promise.all([getImg2(getFrameSrc(m)), getImg2(getFrameSrc(mNext))]);
+
+    for (let f = 0; f < FRAMES_PER_MONTH; f++) {
+      // cross-fade in the last XFADE frames of each month
+      const fadeAlpha = f >= FRAMES_PER_MONTH - XFADE
+        ? (f - (FRAMES_PER_MONTH - XFADE)) / XFADE : 0;
+
+      drawBg(m);
+      drawArt(imgA, 1 - fadeAlpha);
+      if (fadeAlpha > 0) drawArt(imgB, fadeAlpha);
+      tickParticles();
+      drawParticles(1);
+      drawCaption(m);
+
+      rendered++;
+      // update progress every 120 frames (~5s at 24fps)
+      if (rendered % 120 === 0) {
+        const pct = Math.round(rendered / totalFrames * 100);
+        $("ss-bar").style.width = pct + "%";
+        $("ss-progress").textContent = `encoding · month ${m + 1}/${monthList.length} · ${pct}% done · ~${Math.round((totalFrames - rendered) / FPS / 60)} min left`;
+        await new Promise((r) => setTimeout(r, 0)); // yield to browser
+      }
+      await new Promise((r) => setTimeout(r, FRAME_MS * .12)); // slight throttle
+    }
+  }
+
+  $("ss-progress").textContent = "finishing encoding…";
+  await new Promise((r) => setTimeout(r, 600));
+  rec.stop(); await recDone;
+
+  const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
+  const blob = new Blob(chunks, { type: mime.split(";")[0] });
+  const sizeMB = Math.round(blob.size / 1e6);
+  dl(URL.createObjectURL(blob), `bonsai-${b.id}-screensaver-${orient}.${ext}`);
+  $("ss-progress").textContent = `Done — ${sizeMB} MB · set it as a live wallpaper on your phone (repeat on loop)`;
+  $("ss-bar").style.width = "100%";
+  toast(`📱 Screensaver downloaded (${sizeMB} MB .${ext})`);
+};
 function pickMime() {
   const M = window.MediaRecorder;
   if (!M) return null;
